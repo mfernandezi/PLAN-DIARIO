@@ -281,6 +281,37 @@ def obtener_dia(fecha: str, ruta: str = EXCEL_PATH) -> Optional[DiaData]:
     return dia
 
 
+def imprimir_dia_plano(dia: DiaData):
+    """Imprime los datos en formato tabla plana: 1 equipo por fila."""
+    print(f"\n{'='*90}")
+    print(f"  METROS DE PERFORACION (Tabla Plana) - {dia.fecha}")
+    print(f"{'='*90}")
+    print(
+        f"{'Fecha':<8} {'Fase':<6} {'Equipo':<8} "
+        f"{'Turno A':>9} {'Turno B':>9} {'Total':>9} "
+        f"{'Plan':>9} {'Cump.Dia':>10}"
+    )
+    print(f"{'-'*90}")
+
+    for fase_label in ["F12", "F10", "F09", "F11"]:
+        fase = dia.fases.get(fase_label)
+        if not fase:
+            continue
+        for eq in fase.equipos:
+            print(
+                f"{dia.fecha:<8} {fase_label:<6} {eq.equipo:<8} "
+                f"{eq.turno_a:>9.1f} {eq.turno_b:>9.1f} {eq.total:>9.1f} "
+                f"{eq.plan:>9.1f} {eq.cumplimiento_diario:>9.1%}"
+            )
+
+    print(f"{'-'*90}")
+    print(
+        f"{dia.fecha:<8} {'TOTAL':<6} {'':8} "
+        f"{dia.total_turno_a:>9.1f} {dia.total_turno_b:>9.1f} {dia.total_metros:>9.1f} "
+        f"{dia.plan_total:>9.1f} {dia.cumplimiento_diario:>9.1%}"
+    )
+
+
 def imprimir_dia(dia: DiaData):
     """Imprime un resumen formateado de un día."""
     print(f"\n{'='*70}")
@@ -337,19 +368,26 @@ def imprimir_dia(dia: DiaData):
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) > 1:
-        fecha = sys.argv[1]
-        dia = obtener_dia(fecha)
-        if dia:
-            imprimir_dia(dia)
-        else:
-            print(f"No se encontró la hoja '{fecha}' en el Excel.")
-            print("Hojas disponibles:")
-            wb = openpyxl.load_workbook(EXCEL_PATH, data_only=True)
-            for name in wb.sheetnames:
-                if name.strip() not in HOJAS_EXCLUIDAS:
-                    print(f"  - {name.strip()}")
-            wb.close()
+    args = sys.argv[1:]
+    modo_plano = "--plano" in args
+    fechas = [a for a in args if not a.startswith("--")]
+
+    if fechas:
+        for fecha in fechas:
+            dia = obtener_dia(fecha)
+            if dia:
+                if modo_plano:
+                    imprimir_dia_plano(dia)
+                else:
+                    imprimir_dia(dia)
+            else:
+                print(f"No se encontró la hoja '{fecha}' en el Excel.")
+                print("Hojas disponibles:")
+                wb = openpyxl.load_workbook(EXCEL_PATH, data_only=True)
+                for name in wb.sheetnames:
+                    if name.strip() not in HOJAS_EXCLUIDAS:
+                        print(f"  - {name.strip()}")
+                wb.close()
     else:
         print("Cargando todas las hojas...")
         data = cargar_excel()
