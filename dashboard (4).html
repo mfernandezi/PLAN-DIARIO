@@ -1,0 +1,1879 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard PyT - Los Pelambres</title>
+<meta name="description" content="Sistema de análisis y seguimiento de KPIs para operaciones mineras">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --background: hsl(210, 17%, 98%);
+  --foreground: hsl(210, 22%, 15%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(210, 22%, 15%);
+  --primary: hsl(195, 85%, 41%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --secondary: hsl(210, 17%, 95%);
+  --secondary-foreground: hsl(210, 22%, 15%);
+  --muted: hsl(210, 17%, 95%);
+  --muted-foreground: hsl(210, 13%, 45%);
+  --accent: hsl(195, 85%, 96%);
+  --accent-foreground: hsl(195, 85%, 25%);
+  --border: hsl(210, 17%, 90%);
+  --success: hsl(142, 76%, 36%);
+  --success-light: hsl(142, 76%, 96%);
+  --warning: hsl(38, 92%, 50%);
+  --warning-light: hsl(38, 92%, 95%);
+  --danger: hsl(0, 72%, 51%);
+  --danger-light: hsl(0, 72%, 97%);
+  --info: hsl(195, 85%, 41%);
+  --info-light: hsl(195, 85%, 96%);
+  --table-header: hsl(210, 22%, 20%);
+  --table-row-hover: hsl(210, 17%, 96%);
+  --radius: 0.75rem;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background: var(--background);
+  color: var(--foreground);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* Header */
+.header {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  padding: 1.5rem;
+  text-align: center;
+}
+.header-inner { display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin-bottom: 0.25rem; }
+.header h1 { font-size: 1.875rem; font-weight: 700; }
+.header p { opacity: 0.8; }
+.header-icon { width: 32px; height: 32px; }
+
+/* Container */
+.container { max-width: 1400px; margin: 0 auto; padding: 0 1rem; }
+
+/* Cards */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.5rem 1rem; border-radius: calc(var(--radius) - 2px);
+  font-size: 0.875rem; font-weight: 500; cursor: pointer;
+  border: none; transition: all 0.2s;
+}
+.btn-primary { background: var(--primary); color: var(--primary-foreground); }
+.btn-primary:hover { opacity: 0.9; }
+.btn-outline { background: transparent; color: var(--foreground); border: 1px solid var(--border); }
+.btn-outline:hover { background: var(--secondary); }
+.btn-secondary { background: var(--secondary); color: var(--secondary-foreground); border: 1px solid var(--border); }
+.btn-secondary:hover { background: var(--muted); }
+.btn-sm { padding: 0.375rem 0.75rem; font-size: 0.8125rem; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* File upload area */
+.file-uploads-card {
+  padding: 1rem;
+  background: hsl(195, 85%, 96%, 0.3);
+  border-color: hsl(195, 85%, 41%, 0.3);
+}
+.file-uploads-title {
+  font-size: 0.75rem; font-weight: 700; text-align: center;
+  color: var(--muted-foreground); margin-bottom: 0.75rem;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.file-uploads-grid { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 1rem; }
+.file-upload-item { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; }
+.file-input { display: none; }
+.status-badge {
+  font-size: 0.75rem; padding: 0.125rem 0.5rem; border-radius: var(--radius);
+  background: var(--muted); color: var(--muted-foreground);
+}
+.status-badge.loaded { background: hsl(142, 76%, 36%, 0.1); color: var(--success); }
+
+/* Tabs */
+.tabs-container { margin-top: 1rem; }
+.tabs-list {
+  display: flex; background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+.tab-trigger {
+  padding: 0.75rem 1.5rem; font-size: 1rem; font-weight: 600;
+  border: none; border-bottom: 2px solid transparent;
+  background: transparent; color: var(--muted-foreground);
+  cursor: pointer; transition: all 0.2s;
+}
+.tab-trigger:hover { color: var(--foreground); }
+.tab-trigger.active { color: var(--primary); border-bottom-color: var(--primary); }
+.tab-content { display: none; padding: 1rem 0; }
+.tab-content.active { display: block; }
+
+/* Controls card */
+.controls-card { padding: 1rem; }
+.controls-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem; }
+.control-group { display: flex; flex-direction: column; gap: 0.25rem; }
+.control-label { font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground); }
+.control-input {
+  padding: 0.375rem 0.75rem; border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px); font-size: 0.875rem;
+  background: var(--background); color: var(--foreground);
+}
+.control-input:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+select.control-input { min-width: 130px; }
+
+/* Metric Cards */
+.metrics-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;
+  margin-bottom: 1rem;
+}
+@media (min-width: 768px) { .metrics-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1024px) { .metrics-grid { grid-template-columns: repeat(6, 1fr); } }
+.metric-card {
+  padding: 1.25rem; border-left: 4px solid var(--primary);
+  transition: box-shadow 0.2s;
+}
+.metric-card:hover { box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1); }
+.metric-card.success { border-left-color: var(--success); }
+.metric-card.danger { border-left-color: var(--danger); }
+.metric-card .label {
+  font-size: 0.75rem; text-transform: uppercase; font-weight: 600;
+  color: var(--muted-foreground); letter-spacing: 0.05em; margin-bottom: 0.5rem;
+}
+.metric-card .value { font-size: 1.5rem; font-weight: 700; color: var(--foreground); }
+.metric-card .plan {
+  font-size: 0.75rem; color: var(--muted-foreground); margin-top: 0.25rem;
+}
+.metric-card .plan .plan-val { font-weight: 600; }
+.metric-card .plan .plan-val.success { color: var(--success); }
+.metric-card .plan .plan-val.danger { color: var(--danger); }
+
+/* Tables */
+.table-card { margin-bottom: 1rem; }
+.table-header-bar {
+  background: var(--table-header); color: white; padding: 1rem;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.table-header-bar h3 { font-weight: 600; }
+.table-scroll { max-height: 400px; overflow: auto; }
+.table-scroll.short { max-height: 350px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+thead { position: sticky; top: 0; z-index: 10; }
+thead th {
+  background: var(--table-header); color: white;
+  padding: 0.5rem; text-align: center;
+  border-right: 1px solid rgba(255,255,255,0.1);
+}
+thead th:first-child { text-align: left; }
+thead th.sub-plan { background: var(--info); font-size: 0.75rem; padding: 0.25rem 0.5rem; }
+thead th.sub-real { background: var(--muted-foreground); font-size: 0.75rem; padding: 0.25rem 0.5rem; }
+thead th.sub-diff { background: var(--warning); font-size: 0.75rem; padding: 0.25rem 0.5rem; }
+tbody td {
+  padding: 0.5rem; text-align: center;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+tbody td:first-child {
+  text-align: left; font-weight: 600;
+  background: hsl(210, 17%, 95%, 0.3);
+  position: sticky; left: 0; z-index: 5;
+}
+tbody tr:hover { background: var(--table-row-hover); }
+.total-row { background: var(--primary) !important; color: white; font-weight: 600; }
+.total-row td { color: white; background: var(--primary) !important; border-color: rgba(255,255,255,0.2); }
+.total-row td:first-child { background: var(--primary) !important; }
+.summary-col { font-weight: 600; background: hsl(195, 85%, 96%, 0.3) !important; }
+.text-success { color: var(--success); }
+.text-danger { color: var(--danger); }
+td.bg-plan { background: hsl(195, 85%, 96%, 0.5); }
+td.bg-real { background: hsl(210, 17%, 95%, 0.1); }
+
+/* Select dropdown in header */
+.header-select {
+  padding: 0.375rem 0.75rem; border-radius: calc(var(--radius) - 2px);
+  background: rgba(255,255,255,0.1); color: white;
+  border: 1px solid rgba(255,255,255,0.2); font-size: 0.875rem;
+}
+.header-select option { color: var(--foreground); background: var(--card); }
+
+/* Charts */
+.charts-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; margin-bottom: 1rem; }
+@media (min-width: 1024px) { .charts-grid { grid-template-columns: 1fr 1fr; } }
+.chart-card { padding: 1rem; }
+.chart-card h4 {
+  font-size: 0.875rem; font-weight: 600; text-align: center;
+  color: var(--muted-foreground); margin-bottom: 0.75rem;
+}
+.chart-container { position: relative; height: 280px; }
+
+/* Toast */
+.toast-container {
+  position: fixed; bottom: 1rem; right: 1rem; z-index: 9999;
+  display: flex; flex-direction: column; gap: 0.5rem;
+}
+.toast {
+  padding: 0.75rem 1rem; border-radius: var(--radius);
+  font-size: 0.875rem; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+  animation: slideIn 0.3s ease-out;
+  max-width: 350px;
+}
+.toast.success { background: var(--success); color: white; }
+.toast.error { background: var(--danger); color: white; }
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; }
+
+/* Loading overlay */
+.loading-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0, 0, 0, 0.45); z-index: 10000;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+}
+.loading-overlay.active { opacity: 1; pointer-events: all; }
+.loading-box {
+  background: var(--card); border-radius: var(--radius); padding: 2rem 2.5rem;
+  display: flex; flex-direction: column; align-items: center; gap: 1rem;
+  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+}
+.loading-spinner {
+  width: 48px; height: 48px; border: 4px solid var(--border);
+  border-top-color: var(--primary); border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.loading-text { font-size: 0.9375rem; font-weight: 600; color: var(--foreground); }
+.loading-subtext { font-size: 0.8125rem; color: var(--muted-foreground); margin-top: -0.5rem; }
+
+/* Download / action bar */
+.action-bar {
+  display: flex; align-items: center; justify-content: flex-end; gap: 0.75rem;
+  margin-bottom: 1rem; flex-wrap: wrap;
+}
+.btn-success { background: var(--success); color: white; }
+.btn-success:hover { opacity: 0.9; }
+
+/* Pie charts */
+.pie-grid {
+  display: grid; grid-template-columns: 1fr; gap: 1rem; margin-bottom: 1rem;
+}
+@media (min-width: 768px) { .pie-grid { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 1200px) { .pie-grid { grid-template-columns: 1fr 1fr 1fr; } }
+.pie-card { padding: 1rem; }
+.pie-card h4 {
+  font-size: 0.875rem; font-weight: 600; text-align: center;
+  color: var(--muted-foreground); margin-bottom: 0.75rem;
+}
+.pie-container { position: relative; height: 300px; max-width: 400px; margin: 0 auto; }
+
+/* Spacing helpers */
+.space-y > * + * { margin-top: 1rem; }
+.mb-1 { margin-bottom: 1rem; }
+.mt-1 { margin-top: 1rem; }
+
+/* SVG icon */
+.icon { width: 16px; height: 16px; display: inline-block; vertical-align: middle; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-inner">
+    <svg class="header-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+    <h1>Dashboard PyT - Los Pelambres</h1>
+  </div>
+  <p>Análisis Diario por Perforadora y Comparación con Planes</p>
+</div>
+
+<!-- Shared File Uploads -->
+<div class="container" style="padding-top:1rem;">
+  <div class="card file-uploads-card">
+    <p class="file-uploads-title">&#x1F4C2; Archivos Base (compartidos por ambas pestañas)</p>
+    <div class="file-uploads-grid">
+      <div class="file-upload-item">
+        <input type="file" accept=".xlsx,.xls" id="file-uebd" class="file-input">
+        <label for="file-uebd"><span class="btn btn-primary btn-sm"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Cargar UEBD</span></label>
+        <span id="status-uebd" class="status-badge">No cargado</span>
+      </div>
+      <div class="file-upload-item">
+        <input type="file" accept=".xlsx,.xls" id="file-qaqc" class="file-input">
+        <label for="file-qaqc"><span class="btn btn-primary btn-sm"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Cargar QAQC</span></label>
+        <span id="status-qaqc" class="status-badge">No cargado</span>
+      </div>
+      <div class="file-upload-item">
+        <input type="file" accept=".csv" id="file-dispatch" class="file-input">
+        <label for="file-dispatch"><span class="btn btn-secondary btn-sm"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Dispatch PF03</span></label>
+        <span id="status-dispatch" class="status-badge">No cargado</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="container tabs-container">
+  <div class="tabs-list">
+    <button class="tab-trigger active" data-tab="diario" onclick="switchTab('diario')">&#x1F4C5; Análisis Diario/Semanal</button>
+    <button class="tab-trigger" data-tab="mensual" onclick="switchTab('mensual')">&#x1F4C6; Análisis Mensual</button>
+  </div>
+
+  <!-- Daily Tab -->
+  <div id="tab-diario" class="tab-content active">
+    <div class="space-y">
+      <div class="card controls-card">
+        <div class="controls-row">
+          <div class="control-group">
+            <input type="file" accept=".xlsx,.xls" id="file-plan-semanal" class="file-input">
+            <label for="file-plan-semanal"><span class="btn btn-outline btn-sm"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Plan Semanal</span></label>
+            <span id="status-plan-semanal" class="status-badge">No cargado (opcional)</span>
+          </div>
+          <div class="control-group">
+            <label class="control-label">Fecha Desde</label>
+            <input type="date" id="fecha-desde" class="control-input">
+          </div>
+          <div class="control-group">
+            <label class="control-label">Fecha Hasta</label>
+            <input type="date" id="fecha-hasta" class="control-input">
+          </div>
+          <div class="control-group">
+            <label class="control-label">Equipo</label>
+            <select id="filtro-equipo-diario" class="control-input">
+              <option value="TODOS">Todos</option>
+            </select>
+          </div>
+          <button id="btn-actualizar-diario" class="btn btn-primary" onclick="actualizarDiario()">
+            <svg class="icon" id="icon-refresh-diario" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+            Actualizar
+          </button>
+        </div>
+      </div>
+      <div id="daily-results"></div>
+    </div>
+  </div>
+
+  <!-- Monthly Tab -->
+  <div id="tab-mensual" class="tab-content">
+    <div class="space-y">
+      <div class="card controls-card">
+        <div class="controls-row">
+          <div class="control-group">
+            <input type="file" accept=".xlsx,.xls" id="file-plan-mensual" class="file-input">
+            <label for="file-plan-mensual"><span class="btn btn-outline btn-sm"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Plan Mensual</span></label>
+            <span id="status-plan-mensual" class="status-badge">No cargado (opcional)</span>
+          </div>
+          <div class="control-group">
+            <label class="control-label">Mes Inicial</label>
+            <input type="month" id="mes-inicio" class="control-input">
+          </div>
+          <div class="control-group">
+            <label class="control-label">Mes Final</label>
+            <input type="month" id="mes-final" class="control-input">
+          </div>
+          <div class="control-group">
+            <label class="control-label">Equipo</label>
+            <select id="filtro-equipo-mensual" class="control-input">
+              <option value="TODOS">Todos</option>
+            </select>
+          </div>
+          <button id="btn-actualizar-mensual" class="btn btn-primary" onclick="actualizarMensual()">
+            <svg class="icon" id="icon-refresh-mensual" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+            Actualizar
+          </button>
+        </div>
+      </div>
+      <div id="monthly-results"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loading-overlay" class="loading-overlay">
+  <div class="loading-box">
+    <div class="loading-spinner"></div>
+    <div id="loading-text" class="loading-text">Cargando archivo...</div>
+    <div id="loading-subtext" class="loading-subtext">Por favor espere</div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container" class="toast-container"></div>
+
+<script>
+// ============================================
+// GLOBAL STATE
+// ============================================
+let datosUEBD = [];
+let datosQAQC = [];
+let datosDispatch = [];
+let planSemanal = {};
+let planMensual = {};
+let metricaDetalleDiario = 'metros';
+let metricaComparacionDiario = 'disponibilidad';
+let metricaDetalleMensual = 'metros';
+let metricaComparacionMensual = 'disponibilidad';
+let lastDailyMetricas = null;
+let lastMonthlyMetricas = null;
+let chartInstances = {};
+
+// ============================================
+// LOADING OVERLAY
+// ============================================
+function showLoading(text, subtext) {
+  document.getElementById('loading-text').textContent = text || 'Cargando archivo...';
+  document.getElementById('loading-subtext').textContent = subtext || 'Por favor espere';
+  document.getElementById('loading-overlay').classList.add('active');
+}
+function hideLoading() {
+  document.getElementById('loading-overlay').classList.remove('active');
+}
+
+// ============================================
+// TOAST NOTIFICATIONS
+// ============================================
+function showToast(message, type) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => { toast.remove(); }, 3500);
+}
+
+// ============================================
+// TAB SWITCHING
+// ============================================
+function switchTab(tab) {
+  document.querySelectorAll('.tab-trigger').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelector('[data-tab="' + tab + '"]').classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+}
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+const SIN_PATIO_CODES = ['276_SN_Marca_Perfor', '276_SN_Area_Perfor', '315_No_requerido'];
+
+function normalizarEquipo(nombre) {
+  let n = nombre.trim().toUpperCase().replace(/-/g, '');
+  if (n === 'PFAR') n = 'PFARR';
+  if (n.match(/^PF\d$/)) n = n.replace(/^PF(\d)$/, 'PF0$1');
+  return n;
+}
+
+function formatearEquipo(nombre) {
+  const norm = normalizarEquipo(nombre);
+  return norm.replace(/^(PF)(\d)/, '$1-$2');
+}
+
+function sortRigs(rigs) {
+  return rigs.sort((a, b) => {
+    const numA = parseInt(normalizarEquipo(a).replace(/\D/g, '')) || 999;
+    const numB = parseInt(normalizarEquipo(b).replace(/\D/g, '')) || 999;
+    return numA - numB;
+  });
+}
+
+function excelSerialToDate(serial) {
+  if (typeof serial !== 'number' || serial < 1) return null;
+  const utcDays = Math.floor(serial) - 25569;
+  const utcMs = utcDays * 86400 * 1000;
+  const d = new Date(utcMs);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return yyyy + '-' + mm + '-' + dd;
+}
+
+function parsearFecha(cellValue) {
+  if (cellValue == null) return null;
+  if (typeof cellValue === 'number' && cellValue > 40000) return excelSerialToDate(cellValue);
+  if (cellValue instanceof Date && !isNaN(cellValue.getTime())) {
+    return cellValue.getFullYear() + '-' + String(cellValue.getMonth() + 1).padStart(2, '0') + '-' + String(cellValue.getDate()).padStart(2, '0');
+  }
+  if (typeof cellValue === 'string') {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(cellValue)) return cellValue;
+    const pd = new Date(cellValue);
+    if (!isNaN(pd.getTime())) {
+      return pd.getFullYear() + '-' + String(pd.getMonth() + 1).padStart(2, '0') + '-' + String(pd.getDate()).padStart(2, '0');
+    }
+  }
+  return null;
+}
+
+function createEmptyTimeMetrics() {
+  return {
+    efectivoTotal: 0, efectivoPerforando: 0,
+    mantencionProgramada: 0, mantencionNoProgramada: 0,
+    reserva: 0, demoraProgramada: 0, demoraNoProgramada: 0,
+    sinPatio: 0, metros: 0, pozos: new Set(),
+    disponibilidad: 0, uebd: 0, rendimientoEfectivo: 0,
+    rendimientoAsarco: 0, pozosTotales: 0, totalHoras: 0,
+  };
+}
+
+function calcularIndicadores(datos) {
+  const operativo = datos.efectivoTotal + datos.reserva + datos.demoraProgramada + datos.demoraNoProgramada;
+  const disponible = operativo + datos.mantencionProgramada + datos.mantencionNoProgramada;
+  datos.disponibilidad = disponible > 0 ? (operativo / disponible * 100) : 0;
+  datos.uebd = operativo > 0 ? (datos.efectivoTotal / operativo * 100) : 0;
+  datos.rendimientoEfectivo = datos.efectivoPerforando > 0 ? (datos.metros / datos.efectivoPerforando) : 0;
+  datos.rendimientoAsarco = datos.efectivoTotal > 0 ? (datos.metros / datos.efectivoTotal) : 0;
+  datos.pozosTotales = datos.pozos ? datos.pozos.size : 0;
+  datos.totalHoras = disponible;
+}
+
+function formatNumES(num) {
+  return Math.round(num).toLocaleString('es-CL');
+}
+
+// ============================================
+// FILE PROCESSING
+// ============================================
+function processUEBDFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array', cellDates: false, raw: true });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
+        const records = [];
+        for (let i = 1; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          if (!row[0]) continue;
+          let fecha = null;
+          if (row[4]) {
+            if (typeof row[4] === 'number') { fecha = excelSerialToDate(row[4]); }
+            else { const pd = new Date(row[4]); if (!isNaN(pd.getTime())) fecha = pd.toISOString().split('T')[0]; }
+          }
+          records.push({
+            rig: formatearEquipo(String(row[0] || '')),
+            fecha: fecha,
+            duracion: parseFloat(row[14]) || 0,
+            codigoDemora: String(row[15] || '').trim(),
+            estado: String(row[16] || '').trim(),
+            planificado: String(row[19] || '').trim(),
+          });
+        }
+        resolve(records);
+      } catch (err) { reject(err); }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function processQAQCFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array', cellDates: false, raw: true });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
+        const records = [];
+        for (let i = 1; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          if (!row[0]) continue;
+          let fecha = null;
+          if (row[29]) {
+            if (typeof row[29] === 'number') { fecha = excelSerialToDate(row[29]); }
+            else { const pd = new Date(row[29]); if (!isNaN(pd.getTime())) fecha = pd.toISOString().split('T')[0]; }
+          }
+          const metros = parseFloat(row[26]) || 0;
+          if (metros > 0 && metros < 1000) {
+            records.push({
+              rig: formatearEquipo(String(row[0] || '')),
+              fecha: fecha,
+              holeName: String(row[2] || '').trim(),
+              metros: metros,
+            });
+          }
+        }
+        resolve(records);
+      } catch (err) { reject(err); }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function processPlanSemanalFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array', cellDates: false, raw: true });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null });
+        const plan = {};
+        const fila1 = jsonData[0];
+        const fechas = [];
+        for (let col = 2; col < fila1.length; col++) {
+          const fecha = parsearFecha(fila1[col]);
+          if (fecha) fechas.push({ fecha, col });
+        }
+        for (let row = 1; row < jsonData.length; row++) {
+          const rowData = jsonData[row];
+          if (!rowData || !rowData[0]) continue;
+          const equipoCol = String(rowData[0]).trim();
+          const metricaCol = String(rowData[1] || '').trim();
+          if (equipoCol === 'TOTAL') continue;
+          if (equipoCol.match(/^PF\d{2,3}$/i) || equipoCol.toUpperCase() === 'PFARR') {
+            const equipo = normalizarEquipo(equipoCol);
+            if (!plan[equipo]) plan[equipo] = {};
+            const valores = {};
+            fechas.forEach(f => { const v = parseFloat(rowData[f.col]); if (!isNaN(v)) valores[f.fecha] = v; });
+            const initFecha = (fecha) => {
+              if (!plan[equipo][fecha]) plan[equipo][fecha] = { disponibilidad: 0, utilizacion: 0, rendimiento: 0, metros: 0, horasEfectivas: 0 };
+            };
+            const metricaNorm = metricaCol.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+            if (metricaNorm === 'disponibilidad') {
+              fechas.forEach(f => { initFecha(f.fecha); let v = valores[f.fecha] || 0; if (v > 0 && v <= 1) v *= 100; plan[equipo][f.fecha].disponibilidad = v; });
+            } else if (metricaNorm === 'utilizacion') {
+              fechas.forEach(f => { initFecha(f.fecha); let v = valores[f.fecha] || 0; if (v > 0 && v <= 1) v *= 100; plan[equipo][f.fecha].utilizacion = v; });
+            } else if (metricaNorm === 'rendimiento') {
+              fechas.forEach(f => { initFecha(f.fecha); plan[equipo][f.fecha].rendimiento = valores[f.fecha] || 0; });
+            } else if (metricaNorm === 'metros') {
+              fechas.forEach(f => { initFecha(f.fecha); plan[equipo][f.fecha].metros = valores[f.fecha] || 0; });
+            } else if (metricaNorm === 'horas efectivas') {
+              fechas.forEach(f => { initFecha(f.fecha); plan[equipo][f.fecha].horasEfectivas = valores[f.fecha] || 0; });
+            }
+          }
+        }
+        resolve(plan);
+      } catch (err) { reject(err); }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function processPlanMensualFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+        const plan = {};
+        let anioBase = null;
+        const matchAnio = file.name.match(/20\d{2}/);
+        if (matchAnio) anioBase = matchAnio[0];
+        const mesesMap = { 'enero':'01','febrero':'02','marzo':'03','abril':'04','mayo':'05','junio':'06','julio':'07','agosto':'08','septiembre':'09','octubre':'10','noviembre':'11','diciembre':'12' };
+        const mapeoMeses = {};
+        const filaMeses = jsonData[0];
+        for (let col = 3; col < filaMeses.length; col++) {
+          const nombreMes = filaMeses[col];
+          if (nombreMes && typeof nombreMes === 'string') {
+            let mesNumero = null; let anioColumna = anioBase;
+            for (const [key, num] of Object.entries(mesesMap)) { if (nombreMes.toLowerCase().includes(key)) { mesNumero = num; break; } }
+            const matchAnioCol = nombreMes.match(/20\d{2}/);
+            if (matchAnioCol) anioColumna = matchAnioCol[0];
+            if (!anioColumna) anioColumna = new Date().getFullYear().toString();
+            if (mesNumero) mapeoMeses[col] = anioColumna + '-' + mesNumero;
+          }
+        }
+        function parsearValor(valor, esPorcentaje) {
+          if (valor === null || valor === undefined || valor === '' || valor === 0) return 0;
+          if (typeof valor === 'number') { if (esPorcentaje && valor > 0 && valor <= 1) return valor * 100; return valor; }
+          let strValor = String(valor).trim().replace('%', '').replace(/,/g, '');
+          const num = parseFloat(strValor);
+          return isNaN(num) ? 0 : num;
+        }
+        for (let row = 1; row < jsonData.length; row++) {
+          const rowData = jsonData[row];
+          if (!rowData || !rowData[0] || !rowData[1]) continue;
+          const equipoRaw = String(rowData[0]).trim().toUpperCase();
+          const indice = String(rowData[1]).trim().toLowerCase();
+          const esTotal = equipoRaw.includes('TOTAL');
+          const esEquipoValido = equipoRaw.match(/^PF\d{1,3}$/) || equipoRaw === 'PFAR' || equipoRaw === 'PFARR';
+          if (!esEquipoValido && !esTotal) continue;
+          let equipo = esTotal ? 'TOTAL' : normalizarEquipo(equipoRaw);
+          if (!plan[equipo]) plan[equipo] = {};
+          let tipoMetrica = null; let esPorcentaje = false;
+          if (indice.includes('disponibilidad')) { tipoMetrica = 'disponibilidad'; esPorcentaje = true; }
+          else if (indice.includes('utilizaci') || indice.includes('utilizacion')) { tipoMetrica = 'utilizacion'; esPorcentaje = true; }
+          else if (indice.includes('rendimiento')) { tipoMetrica = 'rendimiento'; }
+          else if (indice.includes('metro')) { tipoMetrica = 'metros'; }
+          else if (indice.includes('hora') || indice.includes('efectiva')) { tipoMetrica = 'horasEfectivas'; }
+          if (!tipoMetrica) continue;
+          for (const [col, mes] of Object.entries(mapeoMeses)) {
+            const colNum = parseInt(col);
+            if (!plan[equipo][mes]) plan[equipo][mes] = { disponibilidad: 0, utilizacion: 0, rendimiento: 0, metros: 0, horasEfectivas: 0 };
+            plan[equipo][mes][tipoMetrica] = parsearValor(rowData[colNum], esPorcentaje);
+          }
+        }
+        resolve(plan);
+      } catch (err) { reject(err); }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// Dispatch CSV
+function parseSpanishNumber(val) {
+  if (!val || val.trim() === '') return 0;
+  let s = val.replace(/"/g, '').trim();
+  const hasComma = s.includes(',');
+  const dotCount = (s.match(/\./g) || []).length;
+  if (hasComma) {
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else if (dotCount > 1) {
+    s = s.replace(/\./g, '');
+  }
+  const num = parseFloat(s);
+  return isNaN(num) ? 0 : num;
+}
+
+function parseDispatchDate(fullShiftName) {
+  const parts = fullShiftName.trim().split(' ');
+  const datePart = parts[0];
+  const meses = { 'JAN':'01','FEB':'02','MAR':'03','APR':'04','MAY':'05','JUN':'06','JUL':'07','AUG':'08','SEP':'09','OCT':'10','NOV':'11','DEC':'12','ENE':'01','ABR':'04','AGO':'08','DIC':'12' };
+  const dp = datePart.split('-');
+  const dd = dp[0], mmm = dp[1], yyyy = dp[2];
+  const mm = meses[(mmm || '').toUpperCase()] || mmm;
+  if (!dd || !mm || !yyyy) return null;
+  return yyyy + '-' + mm + '-' + dd.padStart(2, '0');
+}
+
+function processDispatchCSV(csvText) {
+  const lines = csvText.split('\n');
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(10, lines.length); i++) { if (lines[i].includes('FullShiftName')) { headerIdx = i; break; } }
+  if (headerIdx === -1) return [];
+  const byDate = {};
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const fields = []; let current = ''; let inQuotes = false;
+    for (let c = 0; c < line.length; c++) {
+      if (line[c] === '"') { inQuotes = !inQuotes; }
+      else if (line[c] === ',' && !inQuotes) { fields.push(current); current = ''; }
+      else { current += line[c]; }
+    }
+    fields.push(current);
+    const equipo = (fields[1] || '').trim();
+    if (normalizarEquipo(equipo) !== 'PF03') continue;
+    const fecha = parseDispatchDate(fields[0] || '');
+    if (!fecha) continue;
+    const metros = parseSpanishNumber(fields[2]);
+    const tpEfectivo = parseSpanishNumber(fields[3]);
+    const demoraProg = parseSpanishNumber(fields[4]);
+    const demoraNprog = parseSpanishNumber(fields[5]);
+    const reserva = parseSpanishNumber(fields[6]);
+    const mantProg = parseSpanishNumber(fields[7]);
+    const mantNprog = parseSpanishNumber(fields[8]);
+    if (!byDate[fecha]) { byDate[fecha] = { rig: 'PF-03', fecha, efectivoTotal: 0, efectivoPerforando: 0, demoraProgramada: 0, demoraNoProgramada: 0, reserva: 0, mantencionProgramada: 0, mantencionNoProgramada: 0, metros: 0 }; }
+    byDate[fecha].metros += metros;
+    byDate[fecha].efectivoTotal += tpEfectivo;
+    byDate[fecha].efectivoPerforando += tpEfectivo;
+    byDate[fecha].demoraProgramada += demoraProg;
+    byDate[fecha].demoraNoProgramada += demoraNprog;
+    byDate[fecha].reserva += reserva;
+    byDate[fecha].mantencionProgramada += mantProg;
+    byDate[fecha].mantencionNoProgramada += mantNprog;
+  }
+
+  const records = Object.values(byDate);
+  if (records.length > 0) {
+    let maxDailyTotal = 0;
+    records.forEach(r => {
+      const dayTotal = r.efectivoTotal + r.demoraProgramada + r.demoraNoProgramada + r.reserva + r.mantencionProgramada + r.mantencionNoProgramada;
+      if (dayTotal > maxDailyTotal) maxDailyTotal = dayTotal;
+    });
+    const divisor = maxDailyTotal > 24 ? 60 : 1;
+    if (divisor > 1) {
+      records.forEach(r => {
+        r.efectivoTotal /= divisor;
+        r.efectivoPerforando /= divisor;
+        r.demoraProgramada /= divisor;
+        r.demoraNoProgramada /= divisor;
+        r.reserva /= divisor;
+        r.mantencionProgramada /= divisor;
+        r.mantencionNoProgramada /= divisor;
+      });
+    }
+  }
+  return records;
+}
+
+// ============================================
+// METRICS CALCULATION
+// ============================================
+function calcularMetricasDiarias(uebdData, qaqcData, fechaDesde, fechaHasta, filtroEquipo, dispatchData) {
+  const metricas = { total: createEmptyTimeMetrics(), porRig: {}, porDia: {}, porRigDia: {} };
+
+  const uebdFiltrado = uebdData.filter(row => {
+    const cumpleFecha = row.fecha && row.fecha >= fechaDesde && row.fecha <= fechaHasta;
+    const rigNorm = normalizarEquipo(row.rig);
+    if (rigNorm === 'PF03') return false;
+    const cumpleEquipo = filtroEquipo === 'TODOS' || rigNorm === normalizarEquipo(filtroEquipo);
+    return cumpleFecha && cumpleEquipo;
+  });
+
+  const qaqcFiltrado = qaqcData.filter(row => {
+    const cumpleFecha = row.fecha && row.fecha >= fechaDesde && row.fecha <= fechaHasta;
+    const rigNorm = normalizarEquipo(row.rig);
+    if (rigNorm === 'PF03') return false;
+    const cumpleEquipo = filtroEquipo === 'TODOS' || rigNorm === normalizarEquipo(filtroEquipo);
+    return cumpleFecha && cumpleEquipo;
+  });
+
+  uebdFiltrado.forEach(row => {
+    const rig = row.rig, fecha = row.fecha;
+    if (!metricas.porRig[rig]) metricas.porRig[rig] = createEmptyTimeMetrics();
+    if (!metricas.porDia[fecha]) metricas.porDia[fecha] = createEmptyTimeMetrics();
+    const key = rig + '_' + fecha;
+    if (!metricas.porRigDia[key]) metricas.porRigDia[key] = Object.assign(createEmptyTimeMetrics(), { rig, fecha });
+    const horas = row.duracion / 3600;
+    const targets = [metricas.total, metricas.porRig[rig], metricas.porDia[fecha], metricas.porRigDia[key]];
+    if (row.estado === 'Efectivo') {
+      targets.forEach(t => t.efectivoTotal += horas);
+      if (row.codigoDemora.includes('106_Efectivo_Perforando')) targets.forEach(t => t.efectivoPerforando += horas);
+    } else if (row.estado === 'Mantencion') {
+      if (row.planificado === 'Programada') targets.forEach(t => t.mantencionProgramada += horas);
+      else targets.forEach(t => t.mantencionNoProgramada += horas);
+    } else if (row.estado === 'Reserva') {
+      targets.forEach(t => t.reserva += horas);
+    } else if (row.estado === 'Demora') {
+      if (row.planificado === 'Programada') targets.forEach(t => t.demoraProgramada += horas);
+      else targets.forEach(t => t.demoraNoProgramada += horas);
+    }
+    if (SIN_PATIO_CODES.some(code => row.codigoDemora.includes(code))) targets.forEach(t => t.sinPatio += horas);
+  });
+
+  qaqcFiltrado.forEach(row => {
+    const rig = row.rig, fecha = row.fecha;
+    const key = rig + '_' + fecha;
+    const targets = [metricas.total];
+    if (metricas.porRig[rig]) targets.push(metricas.porRig[rig]);
+    if (metricas.porDia[fecha]) targets.push(metricas.porDia[fecha]);
+    if (metricas.porRigDia[key]) targets.push(metricas.porRigDia[key]);
+    targets.forEach(t => { t.metros += row.metros; if (row.holeName) t.pozos.add(row.holeName); });
+  });
+
+  const dispatchFiltrado = (dispatchData || []).filter(row => {
+    const cumpleFecha = row.fecha >= fechaDesde && row.fecha <= fechaHasta;
+    const cumpleEquipo = filtroEquipo === 'TODOS' || normalizarEquipo(filtroEquipo) === 'PF03';
+    return cumpleFecha && cumpleEquipo;
+  });
+
+  dispatchFiltrado.forEach(row => {
+    const rig = row.rig, fecha = row.fecha;
+    if (!metricas.porRig[rig]) metricas.porRig[rig] = createEmptyTimeMetrics();
+    if (!metricas.porDia[fecha]) metricas.porDia[fecha] = createEmptyTimeMetrics();
+    const key = rig + '_' + fecha;
+    if (!metricas.porRigDia[key]) metricas.porRigDia[key] = Object.assign(createEmptyTimeMetrics(), { rig, fecha });
+    const targets = [metricas.total, metricas.porRig[rig], metricas.porDia[fecha], metricas.porRigDia[key]];
+    targets.forEach(t => {
+      t.efectivoTotal += row.efectivoTotal; t.efectivoPerforando += row.efectivoPerforando;
+      t.demoraProgramada += row.demoraProgramada; t.demoraNoProgramada += row.demoraNoProgramada;
+      t.reserva += row.reserva; t.mantencionProgramada += row.mantencionProgramada;
+      t.mantencionNoProgramada += row.mantencionNoProgramada; t.metros += row.metros;
+    });
+  });
+
+  if (dispatchFiltrado.length > 0) {
+    qaqcData.filter(row => {
+      if (!row.fecha) return false;
+      return row.fecha >= fechaDesde && row.fecha <= fechaHasta && normalizarEquipo(row.rig) === 'PF03';
+    }).forEach(row => {
+      const fecha = row.fecha, key = 'PF-03_' + fecha;
+      const targets = [metricas.total];
+      if (metricas.porRig['PF-03']) targets.push(metricas.porRig['PF-03']);
+      if (metricas.porDia[fecha]) targets.push(metricas.porDia[fecha]);
+      if (metricas.porRigDia[key]) targets.push(metricas.porRigDia[key]);
+      targets.forEach(t => { if (row.holeName) t.pozos.add(row.holeName); });
+    });
+  }
+
+  calcularIndicadores(metricas.total);
+  Object.values(metricas.porRig).forEach(calcularIndicadores);
+  Object.values(metricas.porDia).forEach(calcularIndicadores);
+  Object.values(metricas.porRigDia).forEach(calcularIndicadores);
+  return metricas;
+}
+
+function calcularMetricasMensuales(uebdData, qaqcData, meses, filtroEquipo, dispatchData) {
+  const metricas = { total: createEmptyTimeMetrics(), porRig: {}, porMes: {}, porRigMes: {} };
+
+  const uebdFiltrado = uebdData.filter(row => {
+    if (!row.fecha) return false;
+    const am = row.fecha.substring(0, 7);
+    const rigNorm = normalizarEquipo(row.rig);
+    if (rigNorm === 'PF03') return false;
+    return meses.includes(am) && (filtroEquipo === 'TODOS' || rigNorm === normalizarEquipo(filtroEquipo));
+  });
+
+  const qaqcFiltrado = qaqcData.filter(row => {
+    if (!row.fecha) return false;
+    const am = row.fecha.substring(0, 7);
+    const rigNorm = normalizarEquipo(row.rig);
+    if (rigNorm === 'PF03') return false;
+    return meses.includes(am) && (filtroEquipo === 'TODOS' || rigNorm === normalizarEquipo(filtroEquipo));
+  });
+
+  uebdFiltrado.forEach(row => {
+    const rig = row.rig, am = row.fecha.substring(0, 7);
+    if (!metricas.porRig[rig]) metricas.porRig[rig] = createEmptyTimeMetrics();
+    if (!metricas.porMes[am]) metricas.porMes[am] = createEmptyTimeMetrics();
+    const key = rig + '_' + am;
+    if (!metricas.porRigMes[key]) metricas.porRigMes[key] = Object.assign(createEmptyTimeMetrics(), { rig, mes: am });
+    const horas = row.duracion / 3600;
+    const targets = [metricas.total, metricas.porRig[rig], metricas.porMes[am], metricas.porRigMes[key]];
+    if (row.estado === 'Efectivo') {
+      targets.forEach(t => t.efectivoTotal += horas);
+      if (row.codigoDemora.includes('106_Efectivo_Perforando')) targets.forEach(t => t.efectivoPerforando += horas);
+    } else if (row.estado === 'Mantencion') {
+      if (row.planificado === 'Programada') targets.forEach(t => t.mantencionProgramada += horas);
+      else targets.forEach(t => t.mantencionNoProgramada += horas);
+    } else if (row.estado === 'Reserva') {
+      targets.forEach(t => t.reserva += horas);
+    } else if (row.estado === 'Demora') {
+      if (row.planificado === 'Programada') targets.forEach(t => t.demoraProgramada += horas);
+      else targets.forEach(t => t.demoraNoProgramada += horas);
+    }
+    if (SIN_PATIO_CODES.some(code => row.codigoDemora.includes(code))) targets.forEach(t => t.sinPatio += horas);
+  });
+
+  qaqcFiltrado.forEach(row => {
+    const rig = row.rig, am = row.fecha.substring(0, 7);
+    const key = rig + '_' + am;
+    const targets = [metricas.total];
+    if (metricas.porRig[rig]) targets.push(metricas.porRig[rig]);
+    if (metricas.porMes[am]) targets.push(metricas.porMes[am]);
+    if (metricas.porRigMes[key]) targets.push(metricas.porRigMes[key]);
+    targets.forEach(t => { t.metros += row.metros; if (row.holeName) t.pozos.add(row.holeName); });
+  });
+
+  const dispatchFiltrado = (dispatchData || []).filter(row => {
+    const am = row.fecha.substring(0, 7);
+    return meses.includes(am) && (filtroEquipo === 'TODOS' || normalizarEquipo(filtroEquipo) === 'PF03');
+  });
+
+  dispatchFiltrado.forEach(row => {
+    const rig = row.rig, am = row.fecha.substring(0, 7);
+    if (!metricas.porRig[rig]) metricas.porRig[rig] = createEmptyTimeMetrics();
+    if (!metricas.porMes[am]) metricas.porMes[am] = createEmptyTimeMetrics();
+    const key = rig + '_' + am;
+    if (!metricas.porRigMes[key]) metricas.porRigMes[key] = Object.assign(createEmptyTimeMetrics(), { rig, mes: am });
+    const targets = [metricas.total, metricas.porRig[rig], metricas.porMes[am], metricas.porRigMes[key]];
+    targets.forEach(t => {
+      t.efectivoTotal += row.efectivoTotal; t.efectivoPerforando += row.efectivoPerforando;
+      t.demoraProgramada += row.demoraProgramada; t.demoraNoProgramada += row.demoraNoProgramada;
+      t.reserva += row.reserva; t.mantencionProgramada += row.mantencionProgramada;
+      t.mantencionNoProgramada += row.mantencionNoProgramada; t.metros += row.metros;
+    });
+  });
+
+  if (dispatchFiltrado.length > 0) {
+    qaqcData.filter(row => {
+      if (!row.fecha) return false;
+      const am = row.fecha.substring(0, 7);
+      return meses.includes(am) && normalizarEquipo(row.rig) === 'PF03';
+    }).forEach(row => {
+      const am = row.fecha.substring(0, 7), key = 'PF-03_' + am;
+      const targets = [metricas.total];
+      if (metricas.porRig['PF-03']) targets.push(metricas.porRig['PF-03']);
+      if (metricas.porMes[am]) targets.push(metricas.porMes[am]);
+      if (metricas.porRigMes[key]) targets.push(metricas.porRigMes[key]);
+      targets.forEach(t => { if (row.holeName) t.pozos.add(row.holeName); });
+    });
+  }
+
+  calcularIndicadores(metricas.total);
+  Object.values(metricas.porRig).forEach(calcularIndicadores);
+  Object.values(metricas.porMes).forEach(calcularIndicadores);
+  Object.values(metricas.porRigMes).forEach(calcularIndicadores);
+  return metricas;
+}
+
+// ============================================
+// DATE/MONTH UTILITIES
+// ============================================
+function getFechasRango(desde, hasta) {
+  const fechas = [];
+  const current = new Date(desde + 'T00:00:00');
+  const end = new Date(hasta + 'T00:00:00');
+  while (current <= end) {
+    fechas.push(current.toISOString().split('T')[0]);
+    current.setDate(current.getDate() + 1);
+  }
+  return fechas;
+}
+
+function getMesesRango(mesInicio, mesFinal) {
+  const meses = [];
+  const [ai, mi] = mesInicio.split('-').map(Number);
+  const [af, mf] = mesFinal.split('-').map(Number);
+  const fi = new Date(ai, mi - 1, 1);
+  const ff = new Date(af, mf - 1, 1);
+  if (fi > ff) return [];
+  let fc = new Date(fi);
+  while (fc <= ff) {
+    meses.push(fc.getFullYear() + '-' + String(fc.getMonth() + 1).padStart(2, '0'));
+    fc.setMonth(fc.getMonth() + 1);
+  }
+  return meses;
+}
+
+function getNombreMes(am) {
+  const [anio, mes] = am.split('-');
+  const nombres = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  return nombres[parseInt(mes) - 1] + ' ' + anio;
+}
+
+function getAvailableRigs() {
+  const rigs = new Set();
+  datosUEBD.forEach(r => rigs.add(r.rig));
+  datosQAQC.forEach(r => rigs.add(r.rig));
+  datosDispatch.forEach(r => rigs.add(r.rig));
+  return Array.from(rigs).sort();
+}
+
+function agregarPlanSemanalAMensual(ps) {
+  const pm = {};
+  Object.keys(ps).forEach(equipo => {
+    const fechas = ps[equipo];
+    const porMes = {};
+    Object.keys(fechas).forEach(fecha => {
+      const mes = fecha.substring(0, 7);
+      if (!porMes[mes]) porMes[mes] = { disponibilidad: { s: 0, c: 0 }, utilizacion: { s: 0, c: 0 }, rendimiento: { s: 0, c: 0 }, metros: 0, horasEfectivas: 0 };
+      const d = fechas[fecha];
+      if (d.disponibilidad > 0) { porMes[mes].disponibilidad.s += d.disponibilidad; porMes[mes].disponibilidad.c++; }
+      if (d.utilizacion > 0) { porMes[mes].utilizacion.s += d.utilizacion; porMes[mes].utilizacion.c++; }
+      if (d.rendimiento > 0) { porMes[mes].rendimiento.s += d.rendimiento; porMes[mes].rendimiento.c++; }
+      porMes[mes].metros += d.metros || 0;
+      porMes[mes].horasEfectivas += d.horasEfectivas || 0;
+    });
+    pm[equipo] = {};
+    Object.keys(porMes).forEach(mes => {
+      const d = porMes[mes];
+      pm[equipo][mes] = {
+        disponibilidad: d.disponibilidad.c > 0 ? d.disponibilidad.s / d.disponibilidad.c : 0,
+        utilizacion: d.utilizacion.c > 0 ? d.utilizacion.s / d.utilizacion.c : 0,
+        rendimiento: d.rendimiento.c > 0 ? d.rendimiento.s / d.rendimiento.c : 0,
+        metros: d.metros, horasEfectivas: d.horasEfectivas,
+      };
+    });
+  });
+  return pm;
+}
+
+// ============================================
+// RENDERING: METRIC CARDS
+// ============================================
+function calcPlanTotals(plan, periodos, rigs) {
+  let sumDisp = 0, countDisp = 0, sumUtil = 0, countUtil = 0, sumRend = 0, countRend = 0, sumMetros = 0, sumHoras = 0;
+  const planKeys = Object.keys(plan);
+  rigs.forEach(rig => {
+    const rigNorm = normalizarEquipo(rig);
+    const planRig = planKeys.find(k => normalizarEquipo(k) === rigNorm);
+    if (!planRig || !plan[planRig]) return;
+    periodos.forEach(p => {
+      const d = plan[planRig][p];
+      if (!d) return;
+      if (d.disponibilidad > 0) { sumDisp += d.disponibilidad; countDisp++; }
+      if (d.utilizacion > 0) { sumUtil += d.utilizacion; countUtil++; }
+      if (d.rendimiento > 0) { sumRend += d.rendimiento; countRend++; }
+      sumMetros += d.metros || 0;
+      sumHoras += d.horasEfectivas || 0;
+    });
+  });
+  return {
+    disponibilidad: countDisp > 0 ? sumDisp / countDisp : null,
+    utilizacion: countUtil > 0 ? sumUtil / countUtil : null,
+    rendimiento: countRend > 0 ? sumRend / countRend : null,
+    metros: sumMetros > 0 ? sumMetros : null,
+    horas: sumHoras > 0 ? sumHoras : null,
+  };
+}
+
+function renderMetricCards(metricas, plan, periodos, rigs) {
+  const hasPlan = plan && Object.keys(plan).length > 0 && periodos && periodos.length > 0 && rigs && rigs.length > 0;
+  const pt = hasPlan ? calcPlanTotals(plan, periodos, rigs) : null;
+  const cmp = (r, p) => p === null || p === 0 ? null : r >= p;
+
+  function mc(label, value, planVal, cumple) {
+    let cls = 'card metric-card';
+    if (cumple === true) cls += ' success'; else if (cumple === false) cls += ' danger';
+    let html = '<div class="' + cls + '"><p class="label">' + label + '</p><p class="value">' + value + '</p>';
+    if (planVal !== undefined && planVal !== null) {
+      const pCls = cumple === true ? 'success' : cumple === false ? 'danger' : '';
+      html += '<p class="plan">Plan: <span class="plan-val ' + pCls + '">' + planVal + '</span></p>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  let html = '<div class="metrics-grid">';
+  html += mc('Disponibilidad', metricas.disponibilidad.toFixed(1) + '%', pt && pt.disponibilidad != null ? pt.disponibilidad.toFixed(1) + '%' : null, pt ? cmp(metricas.disponibilidad, pt.disponibilidad) : null);
+  html += mc('UEBD', metricas.uebd.toFixed(1) + '%', pt && pt.utilizacion != null ? pt.utilizacion.toFixed(1) + '%' : null, pt ? cmp(metricas.uebd, pt.utilizacion) : null);
+  html += mc('Rend. Efectivo', metricas.rendimientoEfectivo.toFixed(1) + ' m/h', pt && pt.rendimiento != null ? pt.rendimiento.toFixed(1) + ' m/h' : null, pt ? cmp(metricas.rendimientoEfectivo, pt.rendimiento) : null);
+  html += mc('Rend. ASARCO', metricas.rendimientoAsarco.toFixed(1) + ' m/h', null, null);
+  html += mc('Metros Totales', formatNumES(metricas.metros), pt && pt.metros != null ? formatNumES(pt.metros) : null, pt ? cmp(metricas.metros, pt.metros) : null);
+  html += mc('Horas Efectivas', formatNumES(metricas.efectivoTotal) + ' hrs', pt && pt.horas != null ? formatNumES(pt.horas) + ' hrs' : null, pt ? cmp(metricas.efectivoTotal, pt.horas) : null);
+  html += '</div>';
+  return html;
+}
+
+// ============================================
+// RENDERING: DETAIL TABLE
+// ============================================
+function getValorFromMetrics(datos, metrica) {
+  if (!datos) return 0;
+  switch (metrica) {
+    case 'metros': return datos.metros || 0;
+    case 'disponibilidad': return datos.disponibilidad || 0;
+    case 'uebd': return datos.uebd || 0;
+    case 'rendimientoEfectivo': return datos.rendimientoEfectivo || 0;
+    case 'rendimientoAsarco': return datos.rendimientoAsarco || 0;
+    case 'horasEfectivas': return datos.efectivoTotal || 0;
+    case 'pozos': return datos.pozosTotales || 0;
+    default: return 0;
+  }
+}
+
+function formatValue(value, metrica) {
+  if (value === 0) return '-';
+  if (metrica === 'metros' || metrica === 'pozos') return formatNumES(value);
+  return value.toFixed(1);
+}
+
+function esAcumulable(m) { return m === 'metros' || m === 'horasEfectivas' || m === 'pozos'; }
+
+function renderDetailTable(metricas, periodos, labels, metrica, title, mode, tabId) {
+  const dataKey = mode === 'daily' ? 'porRigDia' : 'porRigMes';
+  const porPeriodoKey = mode === 'daily' ? 'porDia' : 'porMes';
+  const rigs = sortRigs(Object.keys(metricas.porRig));
+  const selectId = 'select-detalle-' + tabId;
+
+  let html = '<div class="card table-card">';
+  html += '<div class="table-header-bar"><h3>' + title + '</h3>';
+  html += '<select class="header-select" id="' + selectId + '" onchange="onMetricaDetalleChange(\'' + tabId + '\', this.value)">';
+  const opciones = [['metros','Metros'],['disponibilidad','Disponibilidad %'],['uebd','UEBD %'],['rendimientoEfectivo','Rend. Efectivo m/h'],['rendimientoAsarco','Rend. ASARCO m/h'],['horasEfectivas','Horas Efectivas'],['pozos','Pozos']];
+  opciones.forEach(([v, l]) => { html += '<option value="' + v + '"' + (v === metrica ? ' selected' : '') + '>' + l + '</option>'; });
+  html += '</select></div>';
+  html += '<div class="table-scroll"><div style="overflow-x:auto"><table><thead><tr><th style="min-width:120px">Perforadora</th>';
+  labels.forEach(l => { html += '<th style="min-width:80px">' + l + '</th>'; });
+  html += '<th style="min-width:90px;background:hsl(195,85%,41%,0.8)">' + (esAcumulable(metrica) ? 'Total' : 'Promedio') + '</th></tr></thead><tbody>';
+
+  rigs.forEach(rig => {
+    let suma = 0, count = 0;
+    html += '<tr><td>' + rig + '</td>';
+    periodos.forEach(p => {
+      const key = rig + '_' + p;
+      const datos = metricas[dataKey][key];
+      const valor = getValorFromMetrics(datos, metrica);
+      if (valor > 0) { suma += valor; count++; }
+      html += '<td>' + formatValue(valor, metrica) + '</td>';
+    });
+    const resumen = esAcumulable(metrica) ? formatValue(suma, metrica) : (count > 0 ? (suma / count).toFixed(1) : '-');
+    html += '<td class="summary-col">' + resumen + '</td></tr>';
+  });
+
+  html += '<tr class="total-row"><td>TOTAL</td>';
+  periodos.forEach(p => {
+    const pd = metricas[porPeriodoKey] ? metricas[porPeriodoKey][p] : null;
+    html += '<td>' + formatValue(getValorFromMetrics(pd, metrica), metrica) + '</td>';
+  });
+  html += '<td>' + formatValue(getValorFromMetrics(metricas.total, metrica), metrica) + '</td></tr>';
+  html += '</tbody></table></div></div></div>';
+  return html;
+}
+
+// ============================================
+// RENDERING: COMPARISON TABLE
+// ============================================
+function getPlanValueComp(pd, m) {
+  if (!pd) return 0;
+  switch (m) { case 'disponibilidad': return pd.disponibilidad || 0; case 'utilizacion': return pd.utilizacion || 0; case 'rendimiento': return pd.rendimiento || 0; case 'metros': return pd.metros || 0; case 'horas': return pd.horasEfectivas || 0; }
+}
+function getRealValueComp(d, m) {
+  if (!d) return 0;
+  switch (m) { case 'disponibilidad': return d.disponibilidad || 0; case 'utilizacion': return d.uebd || 0; case 'rendimiento': return d.rendimientoEfectivo || 0; case 'metros': return d.metros || 0; case 'horas': return d.efectivoTotal || 0; }
+}
+function formatValComp(v, m) {
+  if (v === 0) return '-';
+  if (m === 'disponibilidad' || m === 'utilizacion') return v.toFixed(1) + '%';
+  if (m === 'metros') return formatNumES(v);
+  if (m === 'horas') return v.toFixed(1) + ' hrs';
+  return v.toFixed(1);
+}
+function formatDiffComp(d, m) {
+  if (d === 0) return '-';
+  const s = d > 0 ? '+' : '';
+  if (m === 'disponibilidad' || m === 'utilizacion') return s + d.toFixed(1) + ' pp';
+  if (m === 'metros') return s + formatNumES(d);
+  return s + d.toFixed(1);
+}
+
+function renderComparisonTable(metricas, plan, periodos, labels, metrica, title, mode, tabId) {
+  const dataKey = mode === 'daily' ? 'porRigDia' : 'porRigMes';
+  const rigs = sortRigs(Object.keys(metricas.porRig));
+  const selectId = 'select-comparacion-' + tabId;
+
+  let html = '<div class="card table-card">';
+  html += '<div class="table-header-bar"><h3>' + title + '</h3>';
+  html += '<select class="header-select" id="' + selectId + '" onchange="onMetricaComparacionChange(\'' + tabId + '\', this.value)">';
+  const opciones = [['disponibilidad','Disponibilidad %'],['utilizacion','Utilización (UEBD) %'],['rendimiento','Rendimiento m/h'],['metros','Metros Perforados'],['horas','Horas Efectivas']];
+  opciones.forEach(([v, l]) => { html += '<option value="' + v + '"' + (v === metrica ? ' selected' : '') + '>' + l + '</option>'; });
+  html += '</select></div>';
+
+  html += '<div class="table-scroll"><div style="overflow-x:auto"><table><thead>';
+  html += '<tr><th style="min-width:100px" rowspan="2">Equipo</th>';
+  labels.forEach(l => { html += '<th colspan="3" style="min-width:180px">' + l + '</th>'; });
+  html += '</tr><tr>';
+  labels.forEach(() => { html += '<th class="sub-plan">Plan</th><th class="sub-real">Real</th><th class="sub-diff">Diff</th>'; });
+  html += '</tr></thead><tbody>';
+
+  rigs.forEach(rig => {
+    const rigPlan = normalizarEquipo(rig);
+    html += '<tr><td>' + rig + '</td>';
+    periodos.forEach(p => {
+      const planEquipo = plan[rigPlan] ? plan[rigPlan][p] : null;
+      const key = rig + '_' + p;
+      const realData = metricas[dataKey] ? metricas[dataKey][key] : null;
+      const vPlan = getPlanValueComp(planEquipo, metrica);
+      const vReal = getRealValueComp(realData, metrica);
+      const diff = vReal - vPlan;
+      const cls = vReal >= vPlan ? 'text-success' : 'text-danger';
+      html += '<td class="bg-plan">' + formatValComp(vPlan, metrica) + '</td>';
+      html += '<td class="bg-real">' + formatValComp(vReal, metrica) + '</td>';
+      html += '<td class="' + cls + '" style="font-weight:600">' + formatDiffComp(diff, metrica) + '</td>';
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div></div></div>';
+  return html;
+}
+
+// ============================================
+// RENDERING: COMPARISON CHARTS
+// ============================================
+function esAcumulableComp(m) { return m === 'metros' || m === 'horas'; }
+
+function renderComparisonCharts(metricas, plan, metrica, periodos, labels, mode, tabId) {
+  const dataKey = mode === 'daily' ? 'porRigDia' : 'porRigMes';
+  const rigs = sortRigs(Object.keys(metricas.porRig));
+
+  const dataByEquipo = rigs.map(rig => {
+    const rigPlan = normalizarEquipo(rig);
+    let sumaPlan = 0, sumaReal = 0, countPlan = 0, countReal = 0;
+    periodos.forEach(p => {
+      const pe = plan[rigPlan] ? plan[rigPlan][p] : null;
+      if (pe) { const v = getPlanValueComp(pe, metrica); if (v > 0) { sumaPlan += v; countPlan++; } }
+      const key = rig + '_' + p;
+      const real = metricas[dataKey] ? metricas[dataKey][key] : null;
+      if (real) { const v = getRealValueComp(real, metrica); if (v > 0) { sumaReal += v; countReal++; } }
+    });
+    const p_ = esAcumulableComp(metrica) ? sumaPlan : (countPlan > 0 ? sumaPlan / countPlan : 0);
+    const r_ = esAcumulableComp(metrica) ? sumaReal : (countReal > 0 ? sumaReal / countReal : 0);
+    return { name: rig, Plan: +p_.toFixed(1), Real: +r_.toFixed(1) };
+  }).filter(d => d.Plan > 0 || d.Real > 0);
+
+  const dataByPeriodo = periodos.map((p, i) => {
+    let sumaPlan = 0, sumaReal = 0, countPlan = 0, countReal = 0;
+    rigs.forEach(rig => {
+      const rigPlan = normalizarEquipo(rig);
+      const pe = plan[rigPlan] ? plan[rigPlan][p] : null;
+      if (pe) { const v = getPlanValueComp(pe, metrica); if (v > 0) { sumaPlan += v; countPlan++; } }
+      const key = rig + '_' + p;
+      const real = metricas[dataKey] ? metricas[dataKey][key] : null;
+      if (real) { const v = getRealValueComp(real, metrica); if (v > 0) { sumaReal += v; countReal++; } }
+    });
+    const p_ = esAcumulableComp(metrica) ? sumaPlan : (countPlan > 0 ? sumaPlan / countPlan : 0);
+    const r_ = esAcumulableComp(metrica) ? sumaReal : (countReal > 0 ? sumaReal / countReal : 0);
+    return { name: labels[i], Plan: +p_.toFixed(1), Real: +r_.toFixed(1) };
+  }).filter(d => d.Plan > 0 || d.Real > 0);
+
+  const chartId1 = 'chart-equipo-' + tabId;
+  const chartId2 = 'chart-periodo-' + tabId;
+
+  let html = '<div class="charts-grid">';
+  html += '<div class="card chart-card"><h4>Por Perforadora (Promedio Período)</h4><div class="chart-container"><canvas id="' + chartId1 + '"></canvas></div></div>';
+  html += '<div class="card chart-card"><h4>Por ' + (mode === 'daily' ? 'Fecha' : 'Mes') + ' (Total/Promedio)</h4><div class="chart-container"><canvas id="' + chartId2 + '"></canvas></div></div>';
+  html += '</div>';
+
+  setTimeout(() => {
+    if (chartInstances[chartId1]) chartInstances[chartId1].destroy();
+    if (chartInstances[chartId2]) chartInstances[chartId2].destroy();
+
+    const ctx1 = document.getElementById(chartId1);
+    const ctx2 = document.getElementById(chartId2);
+    if (!ctx1 || !ctx2) return;
+
+    chartInstances[chartId1] = new Chart(ctx1, {
+      type: 'bar',
+      data: {
+        labels: dataByEquipo.map(d => d.name),
+        datasets: [
+          { label: 'Plan', data: dataByEquipo.map(d => d.Plan), backgroundColor: 'hsl(195, 85%, 41%)' },
+          { label: 'Real', data: dataByEquipo.map(d => d.Real), backgroundColor: 'hsl(142, 76%, 36%)' }
+        ]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: true } } }
+    });
+
+    chartInstances[chartId2] = new Chart(ctx2, {
+      type: 'bar',
+      data: {
+        labels: dataByPeriodo.map(d => d.name),
+        datasets: [
+          { label: 'Plan', data: dataByPeriodo.map(d => d.Plan), backgroundColor: 'hsl(195, 85%, 41%)' },
+          { label: 'Real', data: dataByPeriodo.map(d => d.Real), backgroundColor: 'hsl(142, 76%, 36%)' }
+        ]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: true } } }
+    });
+  }, 50);
+
+  return html;
+}
+
+// ============================================
+// PIE CHART COLORS
+// ============================================
+const PIE_COLORS = [
+  'hsl(195, 85%, 41%)', 'hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)',
+  'hsl(0, 72%, 51%)', 'hsl(270, 60%, 55%)', 'hsl(200, 70%, 55%)',
+  'hsl(160, 60%, 45%)', 'hsl(25, 85%, 55%)', 'hsl(330, 65%, 50%)',
+  'hsl(55, 80%, 45%)', 'hsl(210, 55%, 60%)', 'hsl(120, 45%, 50%)',
+];
+
+const TIME_CATEGORY_COLORS = [
+  'hsl(195, 85%, 41%)', 'hsl(195, 85%, 55%)',
+  'hsl(0, 72%, 51%)', 'hsl(0, 50%, 65%)',
+  'hsl(38, 92%, 50%)',
+  'hsl(270, 50%, 55%)', 'hsl(270, 40%, 70%)',
+];
+
+// ============================================
+// RENDERING: PIE CHARTS (Equipment Distribution)
+// ============================================
+function renderPieCharts(metricas, tabId) {
+  const rigs = sortRigs(Object.keys(metricas.porRig));
+  if (rigs.length === 0) return '';
+
+  const pieMetros = 'pie-metros-' + tabId;
+  const pieHoras = 'pie-horas-' + tabId;
+  const pieTiempos = 'pie-tiempos-' + tabId;
+
+  let html = '<div class="card table-card" style="margin-bottom:1rem">';
+  html += '<div class="table-header-bar"><h3>&#x1F4CA; Distribución por Equipo</h3></div>';
+  html += '<div style="padding:1rem"><div class="pie-grid">';
+  html += '<div class="card pie-card"><h4>Metros Perforados</h4><div class="pie-container"><canvas id="' + pieMetros + '"></canvas></div></div>';
+  html += '<div class="card pie-card"><h4>Horas Efectivas</h4><div class="pie-container"><canvas id="' + pieHoras + '"></canvas></div></div>';
+  html += '<div class="card pie-card"><h4>Distribución de Tiempos (Total)</h4><div class="pie-container"><canvas id="' + pieTiempos + '"></canvas></div></div>';
+  html += '</div></div></div>';
+
+  setTimeout(() => {
+    if (chartInstances[pieMetros]) chartInstances[pieMetros].destroy();
+    if (chartInstances[pieHoras]) chartInstances[pieHoras].destroy();
+    if (chartInstances[pieTiempos]) chartInstances[pieTiempos].destroy();
+
+    const ctx1 = document.getElementById(pieMetros);
+    const ctx2 = document.getElementById(pieHoras);
+    const ctx3 = document.getElementById(pieTiempos);
+    if (!ctx1 || !ctx2 || !ctx3) return;
+
+    const metrosData = rigs.map(r => Math.round(metricas.porRig[r].metros));
+    const horasData = rigs.map(r => +metricas.porRig[r].efectivoTotal.toFixed(1));
+    const colors = rigs.map((_, i) => PIE_COLORS[i % PIE_COLORS.length]);
+
+    const pieOpts = {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right', labels: { boxWidth: 12, padding: 8, font: { size: 11 } } },
+        tooltip: { callbacks: { label: function(ctx) { const total = ctx.dataset.data.reduce((a, b) => a + b, 0); const pct = total > 0 ? (ctx.parsed / total * 100).toFixed(1) : 0; return ctx.label + ': ' + ctx.formattedValue + ' (' + pct + '%)'; } } }
+      }
+    };
+
+    chartInstances[pieMetros] = new Chart(ctx1, {
+      type: 'pie',
+      data: { labels: rigs, datasets: [{ data: metrosData, backgroundColor: colors }] },
+      options: pieOpts
+    });
+
+    chartInstances[pieHoras] = new Chart(ctx2, {
+      type: 'pie',
+      data: { labels: rigs, datasets: [{ data: horasData, backgroundColor: colors }] },
+      options: pieOpts
+    });
+
+    const t = metricas.total;
+    const timeLabels = ['Efectivo Total', 'Efectivo Perf.', 'Mant. Prog.', 'Mant. No Prog.', 'Reserva', 'Demora Prog.', 'Demora No Prog.'];
+    const timeData = [
+      +t.efectivoTotal.toFixed(1), +t.efectivoPerforando.toFixed(1),
+      +t.mantencionProgramada.toFixed(1), +t.mantencionNoProgramada.toFixed(1),
+      +t.reserva.toFixed(1),
+      +t.demoraProgramada.toFixed(1), +t.demoraNoProgramada.toFixed(1)
+    ];
+
+    chartInstances[pieTiempos] = new Chart(ctx3, {
+      type: 'pie',
+      data: { labels: timeLabels, datasets: [{ data: timeData, backgroundColor: TIME_CATEGORY_COLORS }] },
+      options: pieOpts
+    });
+  }, 60);
+
+  return html;
+}
+
+// ============================================
+// DOWNLOAD EXCEL
+// ============================================
+function downloadExcel(metricas, periodos, periodoLabels, mode, tabId) {
+  const rigs = sortRigs(Object.keys(metricas.porRig));
+  const dataKey = mode === 'daily' ? 'porRigDia' : 'porRigMes';
+  const porPeriodoKey = mode === 'daily' ? 'porDia' : 'porMes';
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: Indicadores por Equipo
+  const indRows = [['Perforadora', 'Disponibilidad %', 'UEBD %', 'Rend. Efectivo m/h', 'Rend. ASARCO m/h', 'Metros', 'Pozos']];
+  rigs.forEach(rig => {
+    const d = metricas.porRig[rig];
+    indRows.push([rig, +d.disponibilidad.toFixed(1), +d.uebd.toFixed(1), +d.rendimientoEfectivo.toFixed(1), +d.rendimientoAsarco.toFixed(1), Math.round(d.metros), d.pozosTotales]);
+  });
+  indRows.push(['TOTAL', +metricas.total.disponibilidad.toFixed(1), +metricas.total.uebd.toFixed(1), +metricas.total.rendimientoEfectivo.toFixed(1), +metricas.total.rendimientoAsarco.toFixed(1), Math.round(metricas.total.metros), metricas.total.pozosTotales]);
+  const ws1 = XLSX.utils.aoa_to_sheet(indRows);
+  ws1['!cols'] = [{wch:14},{wch:16},{wch:10},{wch:18},{wch:18},{wch:12},{wch:8}];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Indicadores');
+
+  // Sheet 2: Distribución de Tiempos
+  const timeRows = [['Perforadora', 'Efectivo Total', 'Efectivo Perf.', 'Mant. Prog.', 'Mant. No Prog.', 'Reserva', 'Demora Prog.', 'Demora No Prog.', 'Sin Patio', 'Total hrs']];
+  rigs.forEach(rig => {
+    const d = metricas.porRig[rig];
+    const total = d.efectivoTotal + d.mantencionProgramada + d.mantencionNoProgramada + d.reserva + d.demoraProgramada + d.demoraNoProgramada;
+    timeRows.push([rig, +d.efectivoTotal.toFixed(1), +d.efectivoPerforando.toFixed(1), +d.mantencionProgramada.toFixed(1), +d.mantencionNoProgramada.toFixed(1), +d.reserva.toFixed(1), +d.demoraProgramada.toFixed(1), +d.demoraNoProgramada.toFixed(1), +d.sinPatio.toFixed(1), +total.toFixed(1)]);
+  });
+  const ws2 = XLSX.utils.aoa_to_sheet(timeRows);
+  ws2['!cols'] = Array(10).fill({wch:15});
+  XLSX.utils.book_append_sheet(wb, ws2, 'Dist. Tiempos');
+
+  // Sheet 3: Detalle Metros por período
+  const metricasToExport = ['metros', 'disponibilidad', 'uebd', 'rendimientoEfectivo', 'horasEfectivas'];
+  const metricasNames = { metros: 'Metros', disponibilidad: 'Disponibilidad %', uebd: 'UEBD %', rendimientoEfectivo: 'Rend. Efectivo', horasEfectivas: 'Horas Efectivas' };
+
+  metricasToExport.forEach(metrica => {
+    const header = ['Perforadora'].concat(periodoLabels).concat([esAcumulable(metrica) ? 'Total' : 'Promedio']);
+    const rows = [header];
+    rigs.forEach(rig => {
+      const row = [rig];
+      let suma = 0, count = 0;
+      periodos.forEach(p => {
+        const key = rig + '_' + p;
+        const datos = metricas[dataKey][key];
+        const valor = getValorFromMetrics(datos, metrica);
+        if (valor > 0) { suma += valor; count++; }
+        row.push(metrica === 'metros' ? Math.round(valor) : +valor.toFixed(1));
+      });
+      const resumen = esAcumulable(metrica) ? (metrica === 'metros' ? Math.round(suma) : +suma.toFixed(1)) : (count > 0 ? +(suma / count).toFixed(1) : 0);
+      row.push(resumen);
+      rows.push(row);
+    });
+    const totalRow = ['TOTAL'];
+    periodos.forEach(p => {
+      const pd = metricas[porPeriodoKey] ? metricas[porPeriodoKey][p] : null;
+      const v = getValorFromMetrics(pd, metrica);
+      totalRow.push(metrica === 'metros' ? Math.round(v) : +v.toFixed(1));
+    });
+    const vt = getValorFromMetrics(metricas.total, metrica);
+    totalRow.push(metrica === 'metros' ? Math.round(vt) : +vt.toFixed(1));
+    rows.push(totalRow);
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:14}].concat(periodoLabels.map(() => ({wch:12}))).concat([{wch:12}]);
+    XLSX.utils.book_append_sheet(wb, ws, metricasNames[metrica]);
+  });
+
+  const filename = 'Dashboard_' + (mode === 'daily' ? 'Diario' : 'Mensual') + '_' + new Date().toISOString().split('T')[0] + '.xlsx';
+  XLSX.writeFile(wb, filename);
+  showToast('Archivo descargado: ' + filename, 'success');
+}
+
+// ============================================
+// RENDERING: ACTION BAR (Download)
+// ============================================
+function renderActionBar(tabId) {
+  let html = '<div class="action-bar">';
+  html += '<button class="btn btn-success" onclick="onDownloadClick(\'' + tabId + '\')">';
+  html += '<svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+  html += ' Descargar Excel</button>';
+  html += '</div>';
+  return html;
+}
+
+// ============================================
+// RENDERING: TIME DISTRIBUTION TABLE
+// ============================================
+function renderTimeDistributionTable(metricas) {
+  const rigs = sortRigs(Object.keys(metricas.porRig));
+  let html = '<div class="card table-card">';
+  html += '<div class="table-header-bar"><h3>&#x23F1;&#xFE0F; Distribución de Tiempos por Perforadora</h3></div>';
+  html += '<div class="table-scroll short"><table><thead><tr>';
+  html += '<th>Perforadora</th><th>Efectivo Total</th><th>Efectivo Perf.</th><th>Mant. Prog.</th><th>Mant. No Prog.</th><th>Reserva</th><th>Demora Prog.</th><th>Demora No Prog.</th><th>Sin Patio</th><th>Total</th>';
+  html += '</tr></thead><tbody>';
+  rigs.forEach(rig => {
+    const d = metricas.porRig[rig];
+    const total = d.efectivoTotal + d.mantencionProgramada + d.mantencionNoProgramada + d.reserva + d.demoraProgramada + d.demoraNoProgramada;
+    html += '<tr><td>' + rig + '</td>';
+    html += '<td>' + d.efectivoTotal.toFixed(1) + '</td><td>' + d.efectivoPerforando.toFixed(1) + '</td>';
+    html += '<td>' + d.mantencionProgramada.toFixed(1) + '</td><td>' + d.mantencionNoProgramada.toFixed(1) + '</td>';
+    html += '<td>' + d.reserva.toFixed(1) + '</td><td>' + d.demoraProgramada.toFixed(1) + '</td>';
+    html += '<td>' + d.demoraNoProgramada.toFixed(1) + '</td><td>' + d.sinPatio.toFixed(1) + '</td>';
+    html += '<td style="font-weight:700">' + total.toFixed(1) + '</td></tr>';
+  });
+  html += '</tbody></table></div></div>';
+  return html;
+}
+
+// ============================================
+// RENDERING: INDICATORS TABLE
+// ============================================
+function renderIndicatorsTable(metricas, title) {
+  const rigs = sortRigs(Object.keys(metricas.porRig));
+  let html = '<div class="card table-card">';
+  html += '<div class="table-header-bar"><h3>' + title + '</h3></div>';
+  html += '<div class="table-scroll short"><table><thead><tr>';
+  html += '<th>Perforadora</th><th>Disponibilidad %</th><th>UEBD %</th><th>Rend. Efectivo m/h</th><th>Rend. ASARCO m/h</th><th>Metros</th><th>Pozos</th>';
+  html += '</tr></thead><tbody>';
+  rigs.forEach(rig => {
+    const d = metricas.porRig[rig];
+    html += '<tr><td>' + rig + '</td>';
+    html += '<td>' + d.disponibilidad.toFixed(1) + '</td><td>' + d.uebd.toFixed(1) + '</td>';
+    html += '<td>' + d.rendimientoEfectivo.toFixed(1) + '</td><td>' + d.rendimientoAsarco.toFixed(1) + '</td>';
+    html += '<td>' + formatNumES(d.metros) + '</td><td>' + d.pozosTotales + '</td></tr>';
+  });
+  html += '<tr class="total-row"><td>TOTAL</td>';
+  html += '<td>' + metricas.total.disponibilidad.toFixed(1) + '</td><td>' + metricas.total.uebd.toFixed(1) + '</td>';
+  html += '<td>' + metricas.total.rendimientoEfectivo.toFixed(1) + '</td><td>' + metricas.total.rendimientoAsarco.toFixed(1) + '</td>';
+  html += '<td>' + formatNumES(metricas.total.metros) + '</td><td>' + metricas.total.pozosTotales + '</td></tr>';
+  html += '</tbody></table></div></div>';
+  return html;
+}
+
+// ============================================
+// RENDER DAILY RESULTS
+// ============================================
+function renderDailyResults(metricas, fechas, labels) {
+  let html = '';
+  const rigs = Object.keys(metricas.porRig);
+  const hasPlan = Object.keys(planSemanal).length > 0;
+
+  html += renderActionBar('diario');
+  html += renderMetricCards(metricas.total, hasPlan ? planSemanal : null, fechas, rigs);
+  html += renderDetailTable(metricas, fechas, labels, metricaDetalleDiario, '&#x1F4C5; Detalle Diario por Perforadora', 'daily', 'diario');
+
+  if (hasPlan) {
+    html += renderComparisonTable(metricas, planSemanal, fechas, labels, metricaComparacionDiario, '&#x1F4CB; Comparación con Plan Semanal', 'daily', 'diario');
+    html += renderComparisonCharts(metricas, planSemanal, metricaComparacionDiario, fechas, labels, 'daily', 'diario');
+  }
+
+  html += renderPieCharts(metricas, 'diario');
+  html += renderTimeDistributionTable(metricas);
+  html += renderIndicatorsTable(metricas, '&#x1F4C8; Indicadores por Perforadora (Período Completo)');
+
+  document.getElementById('daily-results').innerHTML = html;
+}
+
+// ============================================
+// RENDER MONTHLY RESULTS
+// ============================================
+function renderMonthlyResults(metricas, meses, labels) {
+  let html = '';
+  const rigs = Object.keys(metricas.porRig);
+  const hasPlan = Object.keys(planMensual).length > 0;
+
+  html += renderActionBar('mensual');
+  html += renderMetricCards(metricas.total, hasPlan ? planMensual : null, meses, rigs);
+  html += renderDetailTable(metricas, meses, labels, metricaDetalleMensual, '&#x1F4C8; Detalle Mensual por Perforadora', 'monthly', 'mensual');
+
+  if (hasPlan) {
+    html += renderComparisonTable(metricas, planMensual, meses, labels, metricaComparacionMensual, '&#x1F4CB; Comparación con Plan Mensual', 'monthly', 'mensual');
+    html += renderComparisonCharts(metricas, planMensual, metricaComparacionMensual, meses, labels, 'monthly', 'mensual');
+  }
+
+  html += renderPieCharts(metricas, 'mensual');
+  html += renderTimeDistributionTable(metricas);
+  html += renderIndicatorsTable(metricas, '&#x1F4C8; Indicadores Consolidados por Perforadora');
+
+  document.getElementById('monthly-results').innerHTML = html;
+}
+
+// ============================================
+// METRIC SELECTOR CHANGE HANDLERS
+// ============================================
+function onMetricaDetalleChange(tabId, value) {
+  if (tabId === 'diario') {
+    metricaDetalleDiario = value;
+    if (lastDailyMetricas) {
+      const fechaDesde = document.getElementById('fecha-desde').value;
+      const fechaHasta = document.getElementById('fecha-hasta').value;
+      const fechas = getFechasRango(fechaDesde, fechaHasta);
+      const labels = fechas.map(f => f.split('-').slice(1).reverse().join('/'));
+      renderDailyResults(lastDailyMetricas, fechas, labels);
+    }
+  } else {
+    metricaDetalleMensual = value;
+    if (lastMonthlyMetricas) {
+      const mi = document.getElementById('mes-inicio').value;
+      const mf = document.getElementById('mes-final').value;
+      const meses = getMesesRango(mi, mf);
+      const labels = meses.map(getNombreMes);
+      renderMonthlyResults(lastMonthlyMetricas, meses, labels);
+    }
+  }
+}
+
+function onMetricaComparacionChange(tabId, value) {
+  if (tabId === 'diario') {
+    metricaComparacionDiario = value;
+    if (lastDailyMetricas) {
+      const fechaDesde = document.getElementById('fecha-desde').value;
+      const fechaHasta = document.getElementById('fecha-hasta').value;
+      const fechas = getFechasRango(fechaDesde, fechaHasta);
+      const labels = fechas.map(f => f.split('-').slice(1).reverse().join('/'));
+      renderDailyResults(lastDailyMetricas, fechas, labels);
+    }
+  } else {
+    metricaComparacionMensual = value;
+    if (lastMonthlyMetricas) {
+      const mi = document.getElementById('mes-inicio').value;
+      const mf = document.getElementById('mes-final').value;
+      const meses = getMesesRango(mi, mf);
+      const labels = meses.map(getNombreMes);
+      renderMonthlyResults(lastMonthlyMetricas, meses, labels);
+    }
+  }
+}
+
+// ============================================
+// DOWNLOAD CLICK HANDLER
+// ============================================
+function onDownloadClick(tabId) {
+  if (tabId === 'diario') {
+    if (!lastDailyMetricas) { showToast('No hay datos para descargar', 'error'); return; }
+    const fechaDesde = document.getElementById('fecha-desde').value;
+    const fechaHasta = document.getElementById('fecha-hasta').value;
+    const fechas = getFechasRango(fechaDesde, fechaHasta);
+    const labels = fechas.map(f => f.split('-').slice(1).reverse().join('/'));
+    downloadExcel(lastDailyMetricas, fechas, labels, 'daily', 'diario');
+  } else {
+    if (!lastMonthlyMetricas) { showToast('No hay datos para descargar', 'error'); return; }
+    const mi = document.getElementById('mes-inicio').value;
+    const mf = document.getElementById('mes-final').value;
+    const meses = getMesesRango(mi, mf);
+    const labels = meses.map(getNombreMes);
+    downloadExcel(lastMonthlyMetricas, meses, labels, 'monthly', 'mensual');
+  }
+}
+
+// ============================================
+// UPDATE EQUIPMENT FILTERS
+// ============================================
+function updateEquipmentFilters() {
+  const rigs = getAvailableRigs();
+  ['filtro-equipo-diario', 'filtro-equipo-mensual'].forEach(id => {
+    const sel = document.getElementById(id);
+    const current = sel.value;
+    sel.innerHTML = '<option value="TODOS">Todos</option>';
+    rigs.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r; opt.textContent = r;
+      sel.appendChild(opt);
+    });
+    sel.value = current || 'TODOS';
+  });
+}
+
+// ============================================
+// MAIN ACTION: ACTUALIZAR DIARIO
+// ============================================
+function actualizarDiario() {
+  if (datosUEBD.length === 0 || datosQAQC.length === 0) {
+    showToast('Carga los archivos UEBD y QAQC primero', 'error');
+    return;
+  }
+  const fechaDesde = document.getElementById('fecha-desde').value;
+  const fechaHasta = document.getElementById('fecha-hasta').value;
+  if (!fechaDesde || !fechaHasta) { showToast('Selecciona las fechas', 'error'); return; }
+
+  const btn = document.getElementById('btn-actualizar-diario');
+  const icon = document.getElementById('icon-refresh-diario');
+  btn.disabled = true;
+  icon.classList.add('spin');
+
+  try {
+    const filtro = document.getElementById('filtro-equipo-diario').value;
+    const metricas = calcularMetricasDiarias(datosUEBD, datosQAQC, fechaDesde, fechaHasta, filtro, datosDispatch);
+    lastDailyMetricas = metricas;
+
+    const fechas = getFechasRango(fechaDesde, fechaHasta);
+    const labels = fechas.map(f => f.split('-').slice(1).reverse().join('/'));
+    renderDailyResults(metricas, fechas, labels);
+    showToast('Dashboard actualizado', 'success');
+  } catch (err) {
+    showToast('Error al procesar datos', 'error');
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    icon.classList.remove('spin');
+  }
+}
+
+// ============================================
+// MAIN ACTION: ACTUALIZAR MENSUAL
+// ============================================
+function actualizarMensual() {
+  if (datosUEBD.length === 0 || datosQAQC.length === 0) {
+    showToast('Carga los archivos UEBD y QAQC primero', 'error');
+    return;
+  }
+  const mesInicio = document.getElementById('mes-inicio').value;
+  const mesFinal = document.getElementById('mes-final').value;
+  if (!mesInicio || !mesFinal) { showToast('Selecciona el rango de meses', 'error'); return; }
+
+  const btn = document.getElementById('btn-actualizar-mensual');
+  const icon = document.getElementById('icon-refresh-mensual');
+  btn.disabled = true;
+  icon.classList.add('spin');
+
+  try {
+    const meses = getMesesRango(mesInicio, mesFinal);
+    if (meses.length === 0) { showToast('El mes inicial no puede ser posterior al final', 'error'); return; }
+
+    if (Object.keys(planMensual).length === 0 && Object.keys(planSemanal).length > 0) {
+      planMensual = agregarPlanSemanalAMensual(planSemanal);
+    }
+
+    const filtro = document.getElementById('filtro-equipo-mensual').value;
+    const metricas = calcularMetricasMensuales(datosUEBD, datosQAQC, meses, filtro, datosDispatch);
+    lastMonthlyMetricas = metricas;
+
+    const labels = meses.map(getNombreMes);
+    renderMonthlyResults(metricas, meses, labels);
+    showToast('Análisis mensual actualizado', 'success');
+  } catch (err) {
+    showToast(err.message || 'Error al procesar datos', 'error');
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    icon.classList.remove('spin');
+  }
+}
+
+// ============================================
+// FILE INPUT EVENT LISTENERS
+// ============================================
+document.getElementById('file-uebd').addEventListener('change', async function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  showLoading('Cargando UEBD...', 'Procesando ' + file.name);
+  try {
+    datosUEBD = await processUEBDFile(file);
+    const badge = document.getElementById('status-uebd');
+    badge.textContent = 'Cargado: ' + datosUEBD.length + ' registros';
+    badge.className = 'status-badge loaded';
+    showToast('UEBD cargado: ' + datosUEBD.length + ' registros', 'success');
+    updateEquipmentFilters();
+  } catch (err) {
+    showToast('Error al cargar UEBD', 'error');
+    console.error(err);
+  } finally {
+    hideLoading();
+  }
+});
+
+document.getElementById('file-qaqc').addEventListener('change', async function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  showLoading('Cargando QAQC...', 'Procesando ' + file.name);
+  try {
+    datosQAQC = await processQAQCFile(file);
+    const badge = document.getElementById('status-qaqc');
+    badge.textContent = 'Cargado: ' + datosQAQC.length + ' registros';
+    badge.className = 'status-badge loaded';
+    showToast('QAQC cargado: ' + datosQAQC.length + ' registros', 'success');
+    updateEquipmentFilters();
+  } catch (err) {
+    showToast('Error al cargar QAQC', 'error');
+    console.error(err);
+  } finally {
+    hideLoading();
+  }
+});
+
+document.getElementById('file-dispatch').addEventListener('change', async function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  showLoading('Cargando Dispatch PF03...', 'Procesando ' + file.name);
+  try {
+    const text = await file.text();
+    datosDispatch = processDispatchCSV(text);
+    const badge = document.getElementById('status-dispatch');
+    badge.textContent = 'Cargado: ' + datosDispatch.length + ' días PF03';
+    badge.className = 'status-badge loaded';
+    showToast('Dispatch PF03 cargado: ' + datosDispatch.length + ' días', 'success');
+    updateEquipmentFilters();
+  } catch (err) {
+    showToast('Error al cargar Dispatch', 'error');
+    console.error(err);
+  } finally {
+    hideLoading();
+  }
+});
+
+document.getElementById('file-plan-semanal').addEventListener('change', async function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  showLoading('Cargando Plan Semanal...', 'Procesando ' + file.name);
+  try {
+    planSemanal = await processPlanSemanalFile(file);
+    const equipos = Object.keys(planSemanal).length;
+    const badge = document.getElementById('status-plan-semanal');
+    badge.textContent = 'Cargado: ' + equipos + ' equipos';
+    badge.className = 'status-badge loaded';
+    showToast('Plan Semanal cargado: ' + equipos + ' equipos', 'success');
+  } catch (err) {
+    showToast('Error al cargar Plan Semanal', 'error');
+    console.error(err);
+  } finally {
+    hideLoading();
+  }
+});
+
+document.getElementById('file-plan-mensual').addEventListener('change', async function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  showLoading('Cargando Plan Mensual...', 'Procesando ' + file.name);
+  try {
+    planMensual = await processPlanMensualFile(file);
+    const equipos = Object.keys(planMensual).filter(k => k !== 'TOTAL').length;
+    const badge = document.getElementById('status-plan-mensual');
+    badge.textContent = 'Cargado: ' + equipos + ' equipos';
+    badge.className = 'status-badge loaded';
+    showToast('Plan Mensual cargado: ' + equipos + ' equipos', 'success');
+  } catch (err) {
+    showToast('Error al cargar Plan Mensual', 'error');
+    console.error(err);
+  } finally {
+    hideLoading();
+  }
+});
+</script>
+</body>
+</html>
