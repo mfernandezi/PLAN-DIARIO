@@ -312,7 +312,7 @@ td.bg-real { background: hsl(210, 17%, 95%, 0.1); }
       </div>
       <div class="file-upload-item">
         <input type="file" accept=".csv" id="file-dispatch" class="file-input">
-        <label for="file-dispatch"><span class="btn btn-secondary btn-sm"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Dispatch PF03</span></label>
+        <label for="file-dispatch"><span class="btn btn-secondary btn-sm"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Dispatch PF03/PFARR</span></label>
         <span id="status-dispatch" class="status-badge">No cargado</span>
       </div>
     </div>
@@ -766,7 +766,8 @@ function processDispatchCSV(csvText) {
     }
     fields.push(current);
     const equipo = (fields[1] || '').trim();
-    if (normalizarEquipo(equipo) !== 'PF03') continue;
+    const equipoNorm = normalizarEquipo(equipo);
+    if (equipoNorm !== 'PF03' && equipoNorm !== 'PFARR') continue;
     const fecha = parseDispatchDate(fields[0] || '');
     if (!fecha) continue;
     const metros = parseSpanishNumber(fields[2]);
@@ -776,15 +777,17 @@ function processDispatchCSV(csvText) {
     const reserva = parseSpanishNumber(fields[6]);
     const mantProg = parseSpanishNumber(fields[7]);
     const mantNprog = parseSpanishNumber(fields[8]);
-    if (!byDate[fecha]) { byDate[fecha] = { rig: 'PF-03', fecha, efectivoTotal: 0, efectivoPerforando: 0, demoraProgramada: 0, demoraNoProgramada: 0, reserva: 0, mantencionProgramada: 0, mantencionNoProgramada: 0, metros: 0 }; }
-    byDate[fecha].metros += metros;
-    byDate[fecha].efectivoTotal += tpEfectivo;
-    byDate[fecha].efectivoPerforando += tpEfectivo;
-    byDate[fecha].demoraProgramada += demoraProg;
-    byDate[fecha].demoraNoProgramada += demoraNprog;
-    byDate[fecha].reserva += reserva;
-    byDate[fecha].mantencionProgramada += mantProg;
-    byDate[fecha].mantencionNoProgramada += mantNprog;
+    const rigLabel = equipoNorm === 'PFARR' ? 'PFARR' : 'PF-03';
+    const dateKey = rigLabel + '_' + fecha;
+    if (!byDate[dateKey]) { byDate[dateKey] = { rig: rigLabel, fecha, efectivoTotal: 0, efectivoPerforando: 0, demoraProgramada: 0, demoraNoProgramada: 0, reserva: 0, mantencionProgramada: 0, mantencionNoProgramada: 0, metros: 0 }; }
+    byDate[dateKey].metros += metros;
+    byDate[dateKey].efectivoTotal += tpEfectivo;
+    byDate[dateKey].efectivoPerforando += tpEfectivo;
+    byDate[dateKey].demoraProgramada += demoraProg;
+    byDate[dateKey].demoraNoProgramada += demoraNprog;
+    byDate[dateKey].reserva += reserva;
+    byDate[dateKey].mantencionProgramada += mantProg;
+    byDate[dateKey].mantencionNoProgramada += mantNprog;
   }
 
   const records = Object.values(byDate);
@@ -816,10 +819,11 @@ function processDispatchCSV(csvText) {
 function calcularMetricasDiarias(uebdData, qaqcData, fechaDesde, fechaHasta, filtroEquipo, dispatchData) {
   const metricas = { total: createEmptyTimeMetrics(), porRig: {}, porDia: {}, porRigDia: {} };
 
+  const DISPATCH_RIGS = new Set(['PF03', 'PFARR']);
   const uebdFiltrado = uebdData.filter(row => {
     const cumpleFecha = row.fecha && row.fecha >= fechaDesde && row.fecha <= fechaHasta;
     const rigNorm = normalizarEquipo(row.rig);
-    if (rigNorm === 'PF03') return false;
+    if (DISPATCH_RIGS.has(rigNorm)) return false;
     const cumpleEquipo = filtroEquipo === 'TODOS' || rigNorm === normalizarEquipo(filtroEquipo);
     return cumpleFecha && cumpleEquipo;
   });
@@ -827,7 +831,7 @@ function calcularMetricasDiarias(uebdData, qaqcData, fechaDesde, fechaHasta, fil
   const qaqcFiltrado = qaqcData.filter(row => {
     const cumpleFecha = row.fecha && row.fecha >= fechaDesde && row.fecha <= fechaHasta;
     const rigNorm = normalizarEquipo(row.rig);
-    if (rigNorm === 'PF03') return false;
+    if (DISPATCH_RIGS.has(rigNorm)) return false;
     const cumpleEquipo = filtroEquipo === 'TODOS' || rigNorm === normalizarEquipo(filtroEquipo);
     return cumpleFecha && cumpleEquipo;
   });
@@ -867,7 +871,8 @@ function calcularMetricasDiarias(uebdData, qaqcData, fechaDesde, fechaHasta, fil
 
   const dispatchFiltrado = (dispatchData || []).filter(row => {
     const cumpleFecha = row.fecha >= fechaDesde && row.fecha <= fechaHasta;
-    const cumpleEquipo = filtroEquipo === 'TODOS' || normalizarEquipo(filtroEquipo) === 'PF03';
+    const rigNorm = normalizarEquipo(row.rig);
+    const cumpleEquipo = filtroEquipo === 'TODOS' || normalizarEquipo(filtroEquipo) === rigNorm;
     return cumpleFecha && cumpleEquipo;
   });
 
@@ -887,13 +892,14 @@ function calcularMetricasDiarias(uebdData, qaqcData, fechaDesde, fechaHasta, fil
   });
 
   if (dispatchFiltrado.length > 0) {
+    const loadedDispatchRigs = new Set(dispatchFiltrado.map(r => r.rig));
     qaqcData.filter(row => {
       if (!row.fecha) return false;
-      return row.fecha >= fechaDesde && row.fecha <= fechaHasta && normalizarEquipo(row.rig) === 'PF03';
+      return row.fecha >= fechaDesde && row.fecha <= fechaHasta && DISPATCH_RIGS.has(normalizarEquipo(row.rig));
     }).forEach(row => {
-      const fecha = row.fecha, key = 'PF-03_' + fecha;
+      const fecha = row.fecha, rig = row.rig, key = rig + '_' + fecha;
       const targets = [metricas.total];
-      if (metricas.porRig['PF-03']) targets.push(metricas.porRig['PF-03']);
+      if (metricas.porRig[rig]) targets.push(metricas.porRig[rig]);
       if (metricas.porDia[fecha]) targets.push(metricas.porDia[fecha]);
       if (metricas.porRigDia[key]) targets.push(metricas.porRigDia[key]);
       targets.forEach(t => { if (row.holeName) t.pozos.add(row.holeName); });
@@ -910,11 +916,12 @@ function calcularMetricasDiarias(uebdData, qaqcData, fechaDesde, fechaHasta, fil
 function calcularMetricasMensuales(uebdData, qaqcData, meses, filtroEquipo, dispatchData) {
   const metricas = { total: createEmptyTimeMetrics(), porRig: {}, porMes: {}, porRigMes: {} };
 
+  const DISPATCH_RIGS_M = new Set(['PF03', 'PFARR']);
   const uebdFiltrado = uebdData.filter(row => {
     if (!row.fecha) return false;
     const am = row.fecha.substring(0, 7);
     const rigNorm = normalizarEquipo(row.rig);
-    if (rigNorm === 'PF03') return false;
+    if (DISPATCH_RIGS_M.has(rigNorm)) return false;
     return meses.includes(am) && (filtroEquipo === 'TODOS' || rigNorm === normalizarEquipo(filtroEquipo));
   });
 
@@ -922,7 +929,7 @@ function calcularMetricasMensuales(uebdData, qaqcData, meses, filtroEquipo, disp
     if (!row.fecha) return false;
     const am = row.fecha.substring(0, 7);
     const rigNorm = normalizarEquipo(row.rig);
-    if (rigNorm === 'PF03') return false;
+    if (DISPATCH_RIGS_M.has(rigNorm)) return false;
     return meses.includes(am) && (filtroEquipo === 'TODOS' || rigNorm === normalizarEquipo(filtroEquipo));
   });
 
@@ -961,7 +968,8 @@ function calcularMetricasMensuales(uebdData, qaqcData, meses, filtroEquipo, disp
 
   const dispatchFiltrado = (dispatchData || []).filter(row => {
     const am = row.fecha.substring(0, 7);
-    return meses.includes(am) && (filtroEquipo === 'TODOS' || normalizarEquipo(filtroEquipo) === 'PF03');
+    const rigNorm = normalizarEquipo(row.rig);
+    return meses.includes(am) && (filtroEquipo === 'TODOS' || normalizarEquipo(filtroEquipo) === rigNorm);
   });
 
   dispatchFiltrado.forEach(row => {
@@ -983,11 +991,11 @@ function calcularMetricasMensuales(uebdData, qaqcData, meses, filtroEquipo, disp
     qaqcData.filter(row => {
       if (!row.fecha) return false;
       const am = row.fecha.substring(0, 7);
-      return meses.includes(am) && normalizarEquipo(row.rig) === 'PF03';
+      return meses.includes(am) && DISPATCH_RIGS_M.has(normalizarEquipo(row.rig));
     }).forEach(row => {
-      const am = row.fecha.substring(0, 7), key = 'PF-03_' + am;
+      const am = row.fecha.substring(0, 7), rig = row.rig, key = rig + '_' + am;
       const targets = [metricas.total];
-      if (metricas.porRig['PF-03']) targets.push(metricas.porRig['PF-03']);
+      if (metricas.porRig[rig]) targets.push(metricas.porRig[rig]);
       if (metricas.porMes[am]) targets.push(metricas.porMes[am]);
       if (metricas.porRigMes[key]) targets.push(metricas.porRigMes[key]);
       targets.forEach(t => { if (row.holeName) t.pozos.add(row.holeName); });
@@ -1820,14 +1828,15 @@ document.getElementById('file-qaqc').addEventListener('change', async function(e
 document.getElementById('file-dispatch').addEventListener('change', async function(e) {
   const file = e.target.files[0];
   if (!file) return;
-  showLoading('Cargando Dispatch PF03...', 'Procesando ' + file.name);
+  showLoading('Cargando Dispatch PF03/PFARR...', 'Procesando ' + file.name);
   try {
     const text = await file.text();
     datosDispatch = processDispatchCSV(text);
+    const rigs = [...new Set(datosDispatch.map(r => r.rig))].join(', ');
     const badge = document.getElementById('status-dispatch');
-    badge.textContent = 'Cargado: ' + datosDispatch.length + ' días PF03';
+    badge.textContent = 'Cargado: ' + datosDispatch.length + ' registros (' + (rigs || 'sin datos') + ')';
     badge.className = 'status-badge loaded';
-    showToast('Dispatch PF03 cargado: ' + datosDispatch.length + ' días', 'success');
+    showToast('Dispatch cargado: ' + datosDispatch.length + ' registros', 'success');
     updateEquipmentFilters();
   } catch (err) {
     showToast('Error al cargar Dispatch', 'error');
