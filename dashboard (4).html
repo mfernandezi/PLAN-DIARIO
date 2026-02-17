@@ -312,8 +312,13 @@ td.bg-real { background: hsl(210, 17%, 95%, 0.1); }
       </div>
       <div class="file-upload-item">
         <input type="file" accept=".csv" id="file-dispatch" class="file-input">
-        <label for="file-dispatch"><span class="btn btn-secondary btn-sm"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Dispatch PF03/PFARR</span></label>
+        <label for="file-dispatch"><span class="btn btn-secondary btn-sm"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Disp. PF03/PFARR</span></label>
         <span id="status-dispatch" class="status-badge">No cargado</span>
+      </div>
+      <div class="file-upload-item">
+        <input type="file" accept=".xlsx,.xls" id="file-kpi" class="file-input">
+        <label for="file-kpi"><span class="btn btn-secondary btn-sm"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> KPI (metros)</span></label>
+        <span id="status-kpi" class="status-badge">No cargado</span>
       </div>
     </div>
   </div>
@@ -414,6 +419,7 @@ td.bg-real { background: hsl(210, 17%, 95%, 0.1); }
 let datosUEBD = [];
 let datosQAQC = [];
 let datosDispatch = [];
+let datosKPI = {};        // { 'PF-03': { 'YYYY-MM-DD': metros }, 'PFARR': { ... } }
 let planSemanal = {};
 let planMensual = {};
 let metricaDetalleDiario = 'metros';
@@ -780,7 +786,7 @@ function processDispatchCSV(csvText) {
     const rigLabel = equipoNorm === 'PFARR' ? 'PFARR' : 'PF-03';
     const dateKey = rigLabel + '_' + fecha;
     if (!byDate[dateKey]) { byDate[dateKey] = { rig: rigLabel, fecha, efectivoTotal: 0, efectivoPerforando: 0, demoraProgramada: 0, demoraNoProgramada: 0, reserva: 0, mantencionProgramada: 0, mantencionNoProgramada: 0, metros: 0 }; }
-    byDate[dateKey].metros += metros;
+    // metros comes from KPI file, not from this CSV
     byDate[dateKey].efectivoTotal += tpEfectivo;
     byDate[dateKey].efectivoPerforando += tpEfectivo;
     byDate[dateKey].demoraProgramada += demoraProg;
@@ -811,6 +817,56 @@ function processDispatchCSV(csvText) {
     }
   }
   return records;
+}
+
+// ============================================
+// KPI FILE PROCESSING (metros reales PF03/PFARR)
+// ============================================
+function processKPIFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array', cellDates: false, raw: true });
+        const result = {};  // { 'PF-03': { 'YYYY-MM-DD': metros }, 'PFARR': { ... } }
+
+        workbook.SheetNames.forEach(sheetName => {
+          const trimmed = sheetName.trim();
+          // Match "DD-MM" or "DD-MM " format (day-month, no year)
+          const match = trimmed.match(/^(\d{1,2})-(\d{2})\s*$/);
+          if (!match) return;
+          const dd = match[1].padStart(2, '0');
+          const mm = match[2];
+          // Year: months Oct-Dec → 2025; Jan-Sep → 2026
+          const year = parseInt(mm) >= 10 ? '2025' : '2026';
+          const fecha = year + '-' + mm + '-' + dd;
+
+          const sheet = workbook.Sheets[trimmed] || workbook.Sheets[sheetName];
+          if (!sheet) return;
+          const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null });
+
+          for (let i = 0; i < jsonData.length; i++) {
+            const row = jsonData[i];
+            if (!row || !row[2]) continue;
+            const cellC = String(row[2]).trim();
+            if (cellC.toUpperCase() === 'TOTAL' || cellC.toUpperCase() === 'ROC') continue;
+            const rigNorm = normalizarEquipo(cellC);
+            if (rigNorm !== 'PF03' && rigNorm !== 'PFARR') continue;
+            // Column F (index 5) = total real metros for that fase/turno row
+            const metros = parseFloat(row[5]) || 0;
+            if (metros <= 0) continue;
+            const rigLabel = rigNorm === 'PFARR' ? 'PFARR' : 'PF-03';
+            if (!result[rigLabel]) result[rigLabel] = {};
+            result[rigLabel][fecha] = (result[rigLabel][fecha] || 0) + metros;
+          }
+        });
+
+        resolve(result);
+      } catch(err) { reject(err); }
+    };
+    reader.readAsArrayBuffer(file);
+  });
 }
 
 // ============================================
@@ -904,6 +960,22 @@ function calcularMetricasDiarias(uebdData, qaqcData, fechaDesde, fechaHasta, fil
       if (metricas.porRigDia[key]) targets.push(metricas.porRigDia[key]);
       targets.forEach(t => { if (row.holeName) t.pozos.add(row.holeName); });
     });
+
+    // Apply KPI metros for dispatch rigs (PF03/PFARR)
+    if (datosKPI && Object.keys(datosKPI).length > 0) {
+      Object.entries(datosKPI).forEach(([rig, fechaMetros]) => {
+        Object.entries(fechaMetros).forEach(([fecha, metros]) => {
+          if (fecha < fechaDesde || fecha > fechaHasta) return;
+          if (filtroEquipo !== 'TODOS' && normalizarEquipo(filtroEquipo) !== normalizarEquipo(rig)) return;
+          const key = rig + '_' + fecha;
+          const targets = [metricas.total];
+          if (metricas.porRig[rig]) targets.push(metricas.porRig[rig]);
+          if (metricas.porDia[fecha]) targets.push(metricas.porDia[fecha]);
+          if (metricas.porRigDia[key]) targets.push(metricas.porRigDia[key]);
+          targets.forEach(t => { t.metros += metros; });
+        });
+      });
+    }
   }
 
   calcularIndicadores(metricas.total);
@@ -1000,6 +1072,23 @@ function calcularMetricasMensuales(uebdData, qaqcData, meses, filtroEquipo, disp
       if (metricas.porRigMes[key]) targets.push(metricas.porRigMes[key]);
       targets.forEach(t => { if (row.holeName) t.pozos.add(row.holeName); });
     });
+
+    // Apply KPI metros for dispatch rigs (PF03/PFARR) - monthly aggregation
+    if (datosKPI && Object.keys(datosKPI).length > 0) {
+      Object.entries(datosKPI).forEach(([rig, fechaMetros]) => {
+        Object.entries(fechaMetros).forEach(([fecha, metros]) => {
+          const am = fecha.substring(0, 7);
+          if (!meses.includes(am)) return;
+          if (filtroEquipo !== 'TODOS' && normalizarEquipo(filtroEquipo) !== normalizarEquipo(rig)) return;
+          const key = rig + '_' + am;
+          const targets = [metricas.total];
+          if (metricas.porRig[rig]) targets.push(metricas.porRig[rig]);
+          if (metricas.porMes[am]) targets.push(metricas.porMes[am]);
+          if (metricas.porRigMes[key]) targets.push(metricas.porRigMes[key]);
+          targets.forEach(t => { t.metros += metros; });
+        });
+      });
+    }
   }
 
   calcularIndicadores(metricas.total);
@@ -1840,6 +1929,27 @@ document.getElementById('file-dispatch').addEventListener('change', async functi
     updateEquipmentFilters();
   } catch (err) {
     showToast('Error al cargar Dispatch', 'error');
+    console.error(err);
+  } finally {
+    hideLoading();
+  }
+});
+
+document.getElementById('file-kpi').addEventListener('change', async function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  showLoading('Cargando KPI...', 'Procesando ' + file.name);
+  try {
+    datosKPI = await processKPIFile(file);
+    const rigs = Object.keys(datosKPI).join(', ');
+    const totalDias = Object.values(datosKPI).reduce((s, v) => s + Object.keys(v).length, 0);
+    const badge = document.getElementById('status-kpi');
+    badge.textContent = 'Cargado: ' + totalDias + ' días (' + (rigs || 'sin datos') + ')';
+    badge.className = 'status-badge loaded';
+    showToast('KPI cargado: ' + totalDias + ' días de metros', 'success');
+    updateEquipmentFilters();
+  } catch (err) {
+    showToast('Error al cargar KPI', 'error');
     console.error(err);
   } finally {
     hideLoading();
