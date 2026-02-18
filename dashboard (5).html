@@ -545,22 +545,29 @@ function processUEBDFile(file) {
     reader.onload = function(e) {
       try {
         const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array', cellDates: false, raw: true });
+        const workbook = XLSX.read(data, { type: 'array', cellDates: false });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null });
         const records = [];
         for (let i = 1; i < jsonData.length; i++) {
           const row = jsonData[i];
           if (!row[0]) continue;
+          // Col 7 = WorkDayStarted (texto 'YYYY-MM-DD') — más fiable que col 4 (serial numérico)
           let fecha = null;
-          if (row[4]) {
-            if (typeof row[4] === 'number') { fecha = excelSerialToDate(row[4]); }
-            else { const pd = new Date(row[4]); if (!isNaN(pd.getTime())) fecha = pd.toISOString().split('T')[0]; }
+          const wd = row[7];
+          if (wd && typeof wd === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(wd)) {
+            fecha = wd;
+          } else if (wd) {
+            fecha = parsearFecha(wd);
           }
+          if (!fecha) fecha = parsearFecha(row[4]);
+          // Duration (col 14) viene en segundos; con raw:true es número directo
+          const rawDur = row[14];
+          const duracion = typeof rawDur === 'number' ? rawDur : (parseFloat(String(rawDur || '').replace(/[,\s]/g, '')) || 0);
           records.push({
             rig: formatearEquipo(String(row[0] || '')),
             fecha: fecha,
-            duracion: parseFloat(row[14]) || 0,
+            duracion: duracion,
             codigoDemora: String(row[15] || '').trim(),
             estado: String(row[16] || '').trim(),
             planificado: String(row[19] || '').trim(),
@@ -704,44 +711,92 @@ function parseSpanishNumber(val) {
 }
 
 function parseDispatchDate(fullShiftName) {
-  const parts = fullShiftName.trim().split(' ');
-  const datePart = parts[0];
-  const meses = { 'JAN':'01','FEB':'02','MAR':'03','APR':'04','MAY':'05','JUN':'06','JUL':'07','AUG':'08','SEP':'09','OCT':'10','NOV':'11','DEC':'12','ENE':'01','ABR':'04','AGO':'08','DIC':'12' };
+  if (!fullShiftName) return null;
+  const datePart = fullShiftName.trim().split(' ')[0];
+  // ISO: "2025-10-31"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
+  const meses = { 'JAN':'01','FEB':'02','MAR':'03','APR':'04','MAY':'05','JUN':'06','JUL':'07','AUG':'08','SEP':'09','OCT':'10','NOV':'11','DEC':'12','ENE':'01','ABR':'04','AGO':'08','DIC':'12','MAR':'03' };
+  // "DD-MON-YYYY" o "DD-MM-YYYY"
   const dp = datePart.split('-');
-  const dd = dp[0], mmm = dp[1], yyyy = dp[2];
-  const mm = meses[(mmm || '').toUpperCase()] || mmm;
-  if (!dd || !mm || !yyyy) return null;
-  return yyyy + '-' + mm + '-' + dd.padStart(2, '0');
+  if (dp.length === 3) {
+    const [a, b, c] = dp;
+    // DD-MON-YYYY (año al final)
+    if (c && c.length === 4) {
+      const mm = meses[b.toUpperCase()] || (b.length === 2 ? b : null);
+      if (mm) return c + '-' + mm + '-' + a.padStart(2, '0');
+    }
+    // YYYY-MM-DD con separador '-' ya cubierto arriba
+  }
+  // "DD/MM/YYYY"
+  const dp2 = datePart.split('/');
+  if (dp2.length === 3) {
+    const [dd, mm, yyyy] = dp2;
+    if (yyyy.length === 4) return yyyy + '-' + mm.padStart(2,'0') + '-' + dd.padStart(2,'0');
+  }
+  // Fallback genérico
+  const pd = new Date(datePart);
+  if (!isNaN(pd.getTime())) return pd.toISOString().split('T')[0];
+  return null;
+}
+
+function splitCSVLine(line, delimiter) {
+  const fields = []; let current = ''; let inQuotes = false;
+  for (let c = 0; c < line.length; c++) {
+    if (line[c] === '"') { inQuotes = !inQuotes; }
+    else if (line[c] === delimiter && !inQuotes) { fields.push(current); current = ''; }
+    else { current += line[c]; }
+  }
+  fields.push(current);
+  return fields;
 }
 
 function processDispatchCSV(csvText) {
   const lines = csvText.split('\n');
+  // Detectar delimitador (coma o punto y coma)
+  const sample = lines.slice(0, 5).join('\n');
+  const delimiter = (sample.match(/;/g) || []).length > (sample.match(/,/g) || []).length ? ';' : ',';
+
   let headerIdx = -1;
-  for (let i = 0; i < Math.min(10, lines.length); i++) { if (lines[i].includes('FullShiftName')) { headerIdx = i; break; } }
+  let headerFields = [];
+  for (let i = 0; i < Math.min(10, lines.length); i++) {
+    if (lines[i].includes('FullShiftName')) {
+      headerIdx = i;
+      headerFields = splitCSVLine(lines[i], delimiter).map(h => h.trim().replace(/"/g,''));
+      break;
+    }
+  }
   if (headerIdx === -1) return [];
+
+  // Mapear columnas por nombre de header
+  const colIdx = {};
+  headerFields.forEach((h, i) => { colIdx[h] = i; });
+  const iShift   = colIdx['FullShiftName'] ?? 0;
+  const iEquipo  = colIdx['Equipment'] ?? colIdx['Equipo'] ?? colIdx['Rig'] ?? 1;
+  const iMetros  = colIdx['Metres'] ?? colIdx['Metros'] ?? colIdx['DrillMetres'] ?? 2;
+  const iEfect   = colIdx['TotalProductiveTime'] ?? colIdx['EfectivoTotal'] ?? colIdx['Efectivo'] ?? 3;
+  const iDProg   = colIdx['PlannedDelay'] ?? colIdx['DemoraProgramada'] ?? 4;
+  const iDNProg  = colIdx['UnplannedDelay'] ?? colIdx['DemoraNo'] ?? colIdx['DemoraNoProgramada'] ?? 5;
+  const iReserva = colIdx['Standby'] ?? colIdx['Reserva'] ?? 6;
+  const iMProg   = colIdx['PlannedMaint'] ?? colIdx['MantProgramada'] ?? 7;
+  const iMNProg  = colIdx['UnplannedMaint'] ?? colIdx['MantNoProgramada'] ?? 8;
+
   const byDate = {};
   for (let i = headerIdx + 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    const fields = []; let current = ''; let inQuotes = false;
-    for (let c = 0; c < line.length; c++) {
-      if (line[c] === '"') { inQuotes = !inQuotes; }
-      else if (line[c] === ',' && !inQuotes) { fields.push(current); current = ''; }
-      else { current += line[c]; }
-    }
-    fields.push(current);
-    const equipo = (fields[1] || '').trim();
+    const fields = splitCSVLine(line, delimiter);
+    const equipo = (fields[iEquipo] || '').trim();
     const equipoNorm = normalizarEquipo(equipo);
     if (equipoNorm !== 'PF03' && equipoNorm !== 'PFARR') continue;
-    const fecha = parseDispatchDate(fields[0] || '');
+    const fecha = parseDispatchDate(fields[iShift] || '');
     if (!fecha) continue;
-    const metros = parseSpanishNumber(fields[2]);
-    const tpEfectivo = parseSpanishNumber(fields[3]);
-    const demoraProg = parseSpanishNumber(fields[4]);
-    const demoraNprog = parseSpanishNumber(fields[5]);
-    const reserva = parseSpanishNumber(fields[6]);
-    const mantProg = parseSpanishNumber(fields[7]);
-    const mantNprog = parseSpanishNumber(fields[8]);
+    const metros = parseSpanishNumber(fields[iMetros] || '');
+    const tpEfectivo = parseSpanishNumber(fields[iEfect] || '');
+    const demoraProg = parseSpanishNumber(fields[iDProg] || '');
+    const demoraNprog = parseSpanishNumber(fields[iDNProg] || '');
+    const reserva = parseSpanishNumber(fields[iReserva] || '');
+    const mantProg = parseSpanishNumber(fields[iMProg] || '');
+    const mantNprog = parseSpanishNumber(fields[iMNProg] || '');
     const rigLabel = equipoNorm === 'PFARR' ? 'PFARR' : 'PF-03';
     const dateKey = rigLabel + '_' + fecha;
     if (!byDate[dateKey]) { byDate[dateKey] = { rig: rigLabel, fecha, efectivoTotal: 0, efectivoPerforando: 0, demoraProgramada: 0, demoraNoProgramada: 0, reserva: 0, mantencionProgramada: 0, mantencionNoProgramada: 0, metros: 0 }; }
@@ -807,13 +862,24 @@ function processKPIFile(file) {
 
           for (let i = 0; i < jsonData.length; i++) {
             const row = jsonData[i];
-            if (!row || !row[2]) continue;
-            const cellC = String(row[2]).trim();
-            if (cellC.toUpperCase() === 'TOTAL' || cellC.toUpperCase() === 'ROC') continue;
-            const rigNorm = normalizarEquipo(cellC);
+            if (!row) continue;
+            // El rig puede estar en col C (idx 2) o col D (idx 3) según el layout
+            const cellC = String(row[2] || '').trim();
+            const cellD = String(row[3] || '').trim();
+            const cellRig = cellC || cellD;
+            if (!cellRig) continue;
+            const upper = cellRig.toUpperCase();
+            if (upper === 'TOTAL' || upper === 'ROC' || upper === '' ||
+                upper === 'TURNO A' || upper === 'TURNO B' || upper === 'PLAN') continue;
+            const rigNorm = normalizarEquipo(cellRig);
             if (rigNorm !== 'PF03' && rigNorm !== 'PFARR') continue;
-            // Column F (index 5) = total real metros for that fase/turno row
-            const metros = parseFloat(row[5]) || 0;
+            // Col F (idx 5) = TOTAL; fallback: TA (idx 3 o 4) + TB (idx 4 o 5)
+            let metros = typeof row[5] === 'number' ? row[5] : (parseFloat(row[5]) || 0);
+            if (metros <= 0) {
+              const ta = typeof row[3] === 'number' ? row[3] : (parseFloat(row[3]) || 0);
+              const tb = typeof row[4] === 'number' ? row[4] : (parseFloat(row[4]) || 0);
+              metros = ta + tb;
+            }
             if (metros <= 0) continue;
             const rigLabel = rigNorm === 'PFARR' ? 'PFARR' : 'PF-03';
             if (!result[rigLabel]) result[rigLabel] = {};
