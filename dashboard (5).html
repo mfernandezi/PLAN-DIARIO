@@ -464,7 +464,7 @@ function switchTab(tab) {
 const SIN_PATIO_CODES = ['276_SN_Marca_Perfor', '276_SN_Area_Perfor', '315_No_requerido'];
 
 function normalizarEquipo(nombre) {
-  let n = nombre.trim().toUpperCase().replace(/-/g, '');
+  let n = nombre.trim().toUpperCase().replace(/[-\s]+/g, '');
   if (n === 'PFAR') n = 'PFARR';
   if (n.match(/^PF\d$/)) n = n.replace(/^PF(\d)$/, 'PF0$1');
   return n;
@@ -895,60 +895,59 @@ function processKPIFile(file) {
     reader.onload = function(e) {
       try {
         const data = new Uint8Array(e.target.result);
-        // No pasar raw:true a XLSX.read (no es opción estándar)
-        const workbook = XLSX.read(data, { type: 'array', cellDates: false });
+        const workbook = XLSX.read(data, { type: 'array', cellDates: false, cellText: false });
         const result = {};  // { 'PF-07': { 'YYYY-MM-DD': metros }, ... }
         let totalFilas = 0;
 
+        // Helpers para leer celdas directamente (evita problemas de formato numérico)
+        const getCellStr = (sheet, r, c) => {
+          const cell = sheet[XLSX.utils.encode_cell({ r, c })];
+          if (!cell || cell.v === undefined || cell.v === null) return '';
+          return String(cell.v);
+        };
+        const getCellNum = (sheet, r, c) => {
+          const cell = sheet[XLSX.utils.encode_cell({ r, c })];
+          if (!cell || cell.v === undefined || cell.v === null) return 0;
+          if (cell.t === 'n') return cell.v || 0;
+          return parseFloat(String(cell.v).replace(/,/g, '')) || 0;
+        };
+
         workbook.SheetNames.forEach(sheetName => {
           const trimmed = sheetName.trim();
-          // Coincidir "DD-MM" (con o sin espacios finales)
           const match = trimmed.match(/^(\d{1,2})-(\d{2})$/);
           if (!match) return;
           const dd = match[1].padStart(2, '0');
           const mm = match[2];
-          // Año: Oct-Dic → 2025; Ene-Sep → 2026
           const year = parseInt(mm) >= 10 ? '2025' : '2026';
           const fecha = year + '-' + mm + '-' + dd;
 
           const sheet = workbook.Sheets[sheetName] || workbook.Sheets[trimmed];
-          if (!sheet) return;
+          if (!sheet || !sheet['!ref']) return;
 
-          // Usar sheet_to_csv con separador | para evitar conflicto con comas en números
-          // sheet_to_csv siempre devuelve valores calculados (no fórmulas), más confiable
-          const csvText = XLSX.utils.sheet_to_csv(sheet, { FS: '|' });
-          const lines = csvText.split('\n');
+          const range = XLSX.utils.decode_range(sheet['!ref']);
+          const maxRow = range.e.r;
+          const maxCol = range.e.c;
 
-          // Auto-detectar columnas desde la fila de encabezado (buscar TURNO A/B/TOTAL)
+          // Auto-detectar columnas buscando "TURNO A/B/TOTAL" en las primeras 8 filas
           let colRig = 2, colTotal = 5, colTA = 3, colTB = 4;
-          for (let i = 0; i < Math.min(8, lines.length); i++) {
-            const cells = lines[i].split('|');
-            for (let j = 0; j < cells.length; j++) {
-              const h = cells[j].trim().toUpperCase().replace(/\s+/g, '');
-              if (h === 'TOTAL') { colTotal = j; }
-              if (h === 'TURNOA') { colTA = j; }
-              if (h === 'TURNOB') { colTB = j; }
+          for (let r = 0; r <= Math.min(7, maxRow); r++) {
+            for (let c = 0; c <= maxCol; c++) {
+              const h = getCellStr(sheet, r, c).trim().toUpperCase().replace(/\s+/g, '');
+              if (h === 'TOTAL') colTotal = c;
+              if (h === 'TURNOA') colTA = c;
+              if (h === 'TURNOB') colTB = c;
             }
           }
 
-          for (let i = 4; i < lines.length; i++) {
-            const cells = lines[i].split('|');
-            if (cells.length <= colRig) continue;
-            const rigRaw = (cells[colRig] || '').trim();
+          // Leer datos desde fila 5 (índice 4)
+          for (let r = 4; r <= maxRow; r++) {
+            const rigRaw = getCellStr(sheet, r, colRig).trim();
             if (!rigRaw) continue;
-
             const rigNorm = normalizarEquipo(rigRaw);
-            // Solo equipos que empiezan con PF
             if (!rigNorm.startsWith('PF')) continue;
 
-            // TOTAL primero, luego TA+TB como fallback
-            const parseNum = s => parseFloat((s || '').replace(/,/g, '')) || 0;
-            let metros = colTotal < cells.length ? parseNum(cells[colTotal]) : 0;
-            if (metros <= 0) {
-              const ta = colTA < cells.length ? parseNum(cells[colTA]) : 0;
-              const tb = colTB < cells.length ? parseNum(cells[colTB]) : 0;
-              metros = ta + tb;
-            }
+            let metros = getCellNum(sheet, r, colTotal);
+            if (metros <= 0) metros = getCellNum(sheet, r, colTA) + getCellNum(sheet, r, colTB);
             if (metros <= 0) continue;
 
             const rigLabel = formatearEquipo(rigRaw);
@@ -958,13 +957,14 @@ function processKPIFile(file) {
           }
         });
 
-        console.log('[KPI] Rigs:', Object.keys(result).join(', '), '| Filas con metros:', totalFilas);
+        console.log('[KPI] Rigs:', Object.keys(result).join(', '), '| Filas:', totalFilas);
         resolve(result);
       } catch(err) {
         console.error('[KPI] Error al parsear:', err);
-        reject(err);
+        reject(new Error('KPI parse error: ' + (err.message || err)));
       }
     };
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
     reader.readAsArrayBuffer(file);
   });
 }
@@ -2062,8 +2062,9 @@ document.getElementById('file-kpi').addEventListener('change', async function(e)
     showToast('KPI cargado: ' + totalDias + ' días de metros', 'success');
     updateEquipmentFilters();
   } catch (err) {
-    showToast('Error al cargar KPI', 'error');
-    console.error(err);
+    const msg = err && err.message ? err.message : String(err);
+    showToast('Error KPI: ' + msg, 'error');
+    console.error('[KPI] catch:', err);
   } finally {
     hideLoading();
   }
