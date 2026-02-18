@@ -895,60 +895,75 @@ function processKPIFile(file) {
     reader.onload = function(e) {
       try {
         const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array', cellDates: false, raw: true });
-        const result = {};  // { 'PF-03': { 'YYYY-MM-DD': metros }, 'PFARR': { ... } }
+        // No pasar raw:true a XLSX.read (no es opción estándar)
+        const workbook = XLSX.read(data, { type: 'array', cellDates: false });
+        const result = {};  // { 'PF-07': { 'YYYY-MM-DD': metros }, ... }
+        let totalFilas = 0;
 
         workbook.SheetNames.forEach(sheetName => {
           const trimmed = sheetName.trim();
-          // Match "DD-MM" or "DD-MM " format (day-month, no year)
-          const match = trimmed.match(/^(\d{1,2})-(\d{2})\s*$/);
+          // Coincidir "DD-MM" (con o sin espacios finales)
+          const match = trimmed.match(/^(\d{1,2})-(\d{2})$/);
           if (!match) return;
           const dd = match[1].padStart(2, '0');
           const mm = match[2];
-          // Year: months Oct-Dec → 2025; Jan-Sep → 2026
+          // Año: Oct-Dic → 2025; Ene-Sep → 2026
           const year = parseInt(mm) >= 10 ? '2025' : '2026';
           const fecha = year + '-' + mm + '-' + dd;
 
-          const sheet = workbook.Sheets[trimmed] || workbook.Sheets[sheetName];
+          const sheet = workbook.Sheets[sheetName] || workbook.Sheets[trimmed];
           if (!sheet) return;
-          const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null });
 
-          for (let i = 0; i < jsonData.length; i++) {
-            const row = jsonData[i];
-            if (!row) continue;
-            // El rig puede estar en col C (idx 2) o col D (idx 3) según el layout
-            const cellC = String(row[2] || '').trim();
-            const cellD = String(row[3] || '').trim();
-            const cellRig = cellC || cellD;
-            if (!cellRig) continue;
-            const upper = cellRig.toUpperCase().replace(/\s+/g, '');
-            // Excluir filas que no son rigs
-            if (!upper || upper === 'TOTAL' || upper === 'ROC' || upper === 'METROSROC' ||
-                upper === 'TURNOA' || upper === 'TURNOB' || upper === 'PLAN' ||
-                upper === 'PLANDIARIO' || upper === 'ACUMULADOSEMANAL' ||
-                upper === 'REAL' || upper.startsWith('FASE') || upper.startsWith('F1') ||
-                upper.startsWith('F9') || upper.startsWith('F10') || upper.startsWith('F11') ||
-                upper === 'COMENTARIOSTURNO' || /^\d+$/.test(upper)) continue;
-            const rigNorm = normalizarEquipo(cellRig);
-            // Solo procesar celdas que parecen nombres de equipos (empieza con PF)
+          // Usar sheet_to_csv con separador | para evitar conflicto con comas en números
+          // sheet_to_csv siempre devuelve valores calculados (no fórmulas), más confiable
+          const csvText = XLSX.utils.sheet_to_csv(sheet, { FS: '|' });
+          const lines = csvText.split('\n');
+
+          // Auto-detectar columnas desde la fila de encabezado (buscar TURNO A/B/TOTAL)
+          let colRig = 2, colTotal = 5, colTA = 3, colTB = 4;
+          for (let i = 0; i < Math.min(8, lines.length); i++) {
+            const cells = lines[i].split('|');
+            for (let j = 0; j < cells.length; j++) {
+              const h = cells[j].trim().toUpperCase().replace(/\s+/g, '');
+              if (h === 'TOTAL') { colTotal = j; }
+              if (h === 'TURNOA') { colTA = j; }
+              if (h === 'TURNOB') { colTB = j; }
+            }
+          }
+
+          for (let i = 4; i < lines.length; i++) {
+            const cells = lines[i].split('|');
+            if (cells.length <= colRig) continue;
+            const rigRaw = (cells[colRig] || '').trim();
+            if (!rigRaw) continue;
+
+            const rigNorm = normalizarEquipo(rigRaw);
+            // Solo equipos que empiezan con PF
             if (!rigNorm.startsWith('PF')) continue;
-            // Col F (idx 5) = TOTAL; fallback: TA (idx 3) + TB (idx 4)
-            let metros = typeof row[5] === 'number' ? row[5] : (parseFloat(row[5]) || 0);
+
+            // TOTAL primero, luego TA+TB como fallback
+            const parseNum = s => parseFloat((s || '').replace(/,/g, '')) || 0;
+            let metros = colTotal < cells.length ? parseNum(cells[colTotal]) : 0;
             if (metros <= 0) {
-              const ta = typeof row[3] === 'number' ? row[3] : (parseFloat(row[3]) || 0);
-              const tb = typeof row[4] === 'number' ? row[4] : (parseFloat(row[4]) || 0);
+              const ta = colTA < cells.length ? parseNum(cells[colTA]) : 0;
+              const tb = colTB < cells.length ? parseNum(cells[colTB]) : 0;
               metros = ta + tb;
             }
             if (metros <= 0) continue;
-            // Usar formatearEquipo para que el nombre coincida con UEBD (ej: 'PF-07')
-            const rigLabel = formatearEquipo(cellRig);
+
+            const rigLabel = formatearEquipo(rigRaw);
             if (!result[rigLabel]) result[rigLabel] = {};
             result[rigLabel][fecha] = (result[rigLabel][fecha] || 0) + metros;
+            totalFilas++;
           }
         });
 
+        console.log('[KPI] Rigs:', Object.keys(result).join(', '), '| Filas con metros:', totalFilas);
         resolve(result);
-      } catch(err) { reject(err); }
+      } catch(err) {
+        console.error('[KPI] Error al parsear:', err);
+        reject(err);
+      }
     };
     reader.readAsArrayBuffer(file);
   });
