@@ -301,12 +301,12 @@ td.bg-real { background: hsl(210, 17%, 95%, 0.1); }
     <p class="file-uploads-title">&#x1F4C2; Archivos Base (compartidos por ambas pestañas)</p>
     <div class="file-uploads-grid">
       <div class="file-upload-item">
-        <input type="file" accept=".xlsx,.xls" id="file-uebd" class="file-input">
+        <input type="file" accept=".xlsx,.xls,.csv" id="file-uebd" class="file-input">
         <label for="file-uebd"><span class="btn btn-primary btn-sm"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Cargar UEBD</span></label>
         <span id="status-uebd" class="status-badge">No cargado</span>
       </div>
 <div class="file-upload-item">
-        <input type="file" accept=".csv" id="file-dispatch" class="file-input">
+        <input type="file" accept=".csv,.xlsx,.xls" id="file-dispatch" class="file-input">
         <label for="file-dispatch"><span class="btn btn-secondary btn-sm"><svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Disp. PF03/PFARR</span></label>
         <span id="status-dispatch" class="status-badge">No cargado</span>
       </div>
@@ -539,6 +539,59 @@ function formatNumES(num) {
 // ============================================
 // FILE PROCESSING
 // ============================================
+function parseUEBDCSV(csvText) {
+  const lines = csvText.split('\n');
+  // Detectar delimitador
+  const sample = lines.slice(0, 5).join('\n');
+  const delimiter = (sample.match(/;/g) || []).length > (sample.match(/,/g) || []).length ? ';' : ',';
+  // Buscar fila de encabezado
+  let headerIdx = -1;
+  let colIdx = {};
+  for (let i = 0; i < Math.min(5, lines.length); i++) {
+    if (lines[i].includes('RigName') || lines[i].includes('WorkDayStarted')) {
+      headerIdx = i;
+      const headers = lines[i].split(delimiter).map(h => h.trim().replace(/^"|"$/g, ''));
+      headers.forEach((h, idx) => { colIdx[h] = idx; });
+      break;
+    }
+  }
+  // Fallback: usar posiciones fijas si no se encuentra encabezado
+  const iRig    = colIdx['RigName']        ?? 0;
+  const iFecha  = colIdx['WorkDayStarted'] ?? 7;
+  const iFecha2 = colIdx['Time']           ?? 4;
+  const iDur    = colIdx['Duration']       ?? 14;
+  const iCod    = colIdx['CodeName']       ?? 15;
+  const iEst    = colIdx['ShortCode']      ?? 16;
+  const iPlan   = colIdx['PlannedCodeName']?? 19;
+  const records = [];
+  const start = headerIdx >= 0 ? headerIdx + 1 : 1;
+  for (let i = start; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    // Usar splitCSVLine si ya está definida, si no split simple
+    const fields = typeof splitCSVLine === 'function'
+      ? splitCSVLine(line, delimiter)
+      : line.split(delimiter).map(f => f.replace(/^"|"$/g, ''));
+    const rigRaw = (fields[iRig] || '').replace(/"/g, '').trim();
+    if (!rigRaw || rigRaw === 'RigName') continue;
+    let fecha = null;
+    const wd = (fields[iFecha] || '').replace(/"/g, '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(wd)) { fecha = wd; }
+    else if (wd) { fecha = parsearFecha(wd); }
+    if (!fecha) { fecha = parsearFecha((fields[iFecha2] || '').replace(/"/g, '').trim()); }
+    const durRaw = (fields[iDur] || '').replace(/"/g, '').replace(/,/g, '').trim();
+    records.push({
+      rig: formatearEquipo(rigRaw),
+      fecha,
+      duracion: parseFloat(durRaw) || 0,
+      codigoDemora: (fields[iCod] || '').replace(/"/g, '').trim(),
+      estado:       (fields[iEst] || '').replace(/"/g, '').trim(),
+      planificado:  (fields[iPlan]|| '').replace(/"/g, '').trim(),
+    });
+  }
+  return records;
+}
+
 function processUEBDFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1932,7 +1985,12 @@ document.getElementById('file-uebd').addEventListener('change', async function(e
   if (!file) return;
   showLoading('Cargando UEBD...', 'Procesando ' + file.name);
   try {
-    datosUEBD = await processUEBDFile(file);
+    if (file.name.toLowerCase().endsWith('.csv')) {
+      const text = await file.text();
+      datosUEBD = parseUEBDCSV(text);
+    } else {
+      datosUEBD = await processUEBDFile(file);
+    }
     const badge = document.getElementById('status-uebd');
     badge.textContent = 'Cargado: ' + datosUEBD.length + ' registros';
     badge.className = 'status-badge loaded';
@@ -1951,7 +2009,15 @@ document.getElementById('file-dispatch').addEventListener('change', async functi
   if (!file) return;
   showLoading('Cargando Dispatch PF03/PFARR...', 'Procesando ' + file.name);
   try {
-    const text = await file.text();
+    let text;
+    if (file.name.toLowerCase().match(/\.xlsx?$/)) {
+      // Convertir Excel a CSV en memoria
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buf), { type: 'array', raw: true });
+      text = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
+    } else {
+      text = await file.text();
+    }
     datosDispatch = processDispatchCSV(text);
     const rigs = [...new Set(datosDispatch.map(r => r.rig))].join(', ');
     const badge = document.getElementById('status-dispatch');
