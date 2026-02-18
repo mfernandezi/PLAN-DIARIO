@@ -868,12 +868,18 @@ function processKPIFile(file) {
             const cellD = String(row[3] || '').trim();
             const cellRig = cellC || cellD;
             if (!cellRig) continue;
-            const upper = cellRig.toUpperCase();
-            if (upper === 'TOTAL' || upper === 'ROC' || upper === '' ||
-                upper === 'TURNO A' || upper === 'TURNO B' || upper === 'PLAN') continue;
+            const upper = cellRig.toUpperCase().replace(/\s+/g, '');
+            // Excluir filas que no son rigs
+            if (!upper || upper === 'TOTAL' || upper === 'ROC' || upper === 'METROSROC' ||
+                upper === 'TURNOA' || upper === 'TURNOB' || upper === 'PLAN' ||
+                upper === 'PLANDIARIO' || upper === 'ACUMULADOSEMANAL' ||
+                upper === 'REAL' || upper.startsWith('FASE') || upper.startsWith('F1') ||
+                upper.startsWith('F9') || upper.startsWith('F10') || upper.startsWith('F11') ||
+                upper === 'COMENTARIOSTURNO' || /^\d+$/.test(upper)) continue;
             const rigNorm = normalizarEquipo(cellRig);
-            if (rigNorm !== 'PF03' && rigNorm !== 'PFARR') continue;
-            // Col F (idx 5) = TOTAL; fallback: TA (idx 3 o 4) + TB (idx 4 o 5)
+            // Solo procesar celdas que parecen nombres de equipos (empieza con PF)
+            if (!rigNorm.startsWith('PF')) continue;
+            // Col F (idx 5) = TOTAL; fallback: TA (idx 3) + TB (idx 4)
             let metros = typeof row[5] === 'number' ? row[5] : (parseFloat(row[5]) || 0);
             if (metros <= 0) {
               const ta = typeof row[3] === 'number' ? row[3] : (parseFloat(row[3]) || 0);
@@ -881,7 +887,8 @@ function processKPIFile(file) {
               metros = ta + tb;
             }
             if (metros <= 0) continue;
-            const rigLabel = rigNorm === 'PFARR' ? 'PFARR' : 'PF-03';
+            // Usar formatearEquipo para que el nombre coincida con UEBD (ej: 'PF-07')
+            const rigLabel = formatearEquipo(cellRig);
             if (!result[rigLabel]) result[rigLabel] = {};
             result[rigLabel][fecha] = (result[rigLabel][fecha] || 0) + metros;
           }
@@ -954,22 +961,20 @@ function calcularMetricasDiarias(uebdData, fechaDesde, fechaHasta, filtroEquipo,
     });
   });
 
-  if (dispatchFiltrado.length > 0) {
-    // Apply KPI metros for dispatch rigs (PF03/PFARR)
-    if (datosKPI && Object.keys(datosKPI).length > 0) {
-      Object.entries(datosKPI).forEach(([rig, fechaMetros]) => {
-        Object.entries(fechaMetros).forEach(([fecha, metros]) => {
-          if (fecha < fechaDesde || fecha > fechaHasta) return;
-          if (filtroEquipo !== 'TODOS' && normalizarEquipo(filtroEquipo) !== normalizarEquipo(rig)) return;
-          const key = rig + '_' + fecha;
-          const targets = [metricas.total];
-          if (metricas.porRig[rig]) targets.push(metricas.porRig[rig]);
-          if (metricas.porDia[fecha]) targets.push(metricas.porDia[fecha]);
-          if (metricas.porRigDia[key]) targets.push(metricas.porRigDia[key]);
-          targets.forEach(t => { t.metros += metros; });
-        });
+  // Aplicar metros KPI para TODOS los rigs (fuente principal de metros al no tener QAQC)
+  if (datosKPI && Object.keys(datosKPI).length > 0) {
+    Object.entries(datosKPI).forEach(([rig, fechaMetros]) => {
+      Object.entries(fechaMetros).forEach(([fecha, metros]) => {
+        if (fecha < fechaDesde || fecha > fechaHasta) return;
+        if (filtroEquipo !== 'TODOS' && normalizarEquipo(filtroEquipo) !== normalizarEquipo(rig)) return;
+        const key = rig + '_' + fecha;
+        if (!metricas.porRig[rig]) metricas.porRig[rig] = createEmptyTimeMetrics();
+        if (!metricas.porDia[fecha]) metricas.porDia[fecha] = createEmptyTimeMetrics();
+        if (!metricas.porRigDia[key]) metricas.porRigDia[key] = Object.assign(createEmptyTimeMetrics(), { rig, fecha });
+        const targets = [metricas.total, metricas.porRig[rig], metricas.porDia[fecha], metricas.porRigDia[key]];
+        targets.forEach(t => { t.metros += metros; });
       });
-    }
+    });
   }
 
   calcularIndicadores(metricas.total);
@@ -1035,23 +1040,21 @@ function calcularMetricasMensuales(uebdData, meses, filtroEquipo, dispatchData) 
     });
   });
 
-  if (dispatchFiltrado.length > 0) {
-    // Apply KPI metros for dispatch rigs (PF03/PFARR) - monthly aggregation
-    if (datosKPI && Object.keys(datosKPI).length > 0) {
-      Object.entries(datosKPI).forEach(([rig, fechaMetros]) => {
-        Object.entries(fechaMetros).forEach(([fecha, metros]) => {
-          const am = fecha.substring(0, 7);
-          if (!meses.includes(am)) return;
-          if (filtroEquipo !== 'TODOS' && normalizarEquipo(filtroEquipo) !== normalizarEquipo(rig)) return;
-          const key = rig + '_' + am;
-          const targets = [metricas.total];
-          if (metricas.porRig[rig]) targets.push(metricas.porRig[rig]);
-          if (metricas.porMes[am]) targets.push(metricas.porMes[am]);
-          if (metricas.porRigMes[key]) targets.push(metricas.porRigMes[key]);
-          targets.forEach(t => { t.metros += metros; });
-        });
+  // Aplicar metros KPI para TODOS los rigs (fuente principal de metros al no tener QAQC)
+  if (datosKPI && Object.keys(datosKPI).length > 0) {
+    Object.entries(datosKPI).forEach(([rig, fechaMetros]) => {
+      Object.entries(fechaMetros).forEach(([fecha, metros]) => {
+        const am = fecha.substring(0, 7);
+        if (!meses.includes(am)) return;
+        if (filtroEquipo !== 'TODOS' && normalizarEquipo(filtroEquipo) !== normalizarEquipo(rig)) return;
+        const key = rig + '_' + am;
+        if (!metricas.porRig[rig]) metricas.porRig[rig] = createEmptyTimeMetrics();
+        if (!metricas.porMes[am]) metricas.porMes[am] = createEmptyTimeMetrics();
+        if (!metricas.porRigMes[key]) metricas.porRigMes[key] = Object.assign(createEmptyTimeMetrics(), { rig, mes: am });
+        const targets = [metricas.total, metricas.porRig[rig], metricas.porMes[am], metricas.porRigMes[key]];
+        targets.forEach(t => { t.metros += metros; });
       });
-    }
+    });
   }
 
   calcularIndicadores(metricas.total);
