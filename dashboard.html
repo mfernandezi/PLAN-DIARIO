@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KPI Perforación - Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0f1923;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        .header {
+            background: linear-gradient(135deg, #1a2a3a, #2d4a5a);
+            padding: 20px 30px;
+            border-bottom: 2px solid #3a7ca5;
+        }
+        .header h1 { font-size: 1.4em; color: #7ec8e3; }
+        .header p { font-size: 0.85em; color: #90a4ae; margin-top: 4px; }
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+        /* Upload */
+        .upload-zone {
+            border: 2px dashed #3a7ca5;
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            background: #1a2a3a;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 20px;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: #7ec8e3;
+            background: #1e3348;
+        }
+        .upload-zone h2 { color: #7ec8e3; margin-bottom: 10px; font-size: 1.2em; }
+        .upload-zone p { color: #90a4ae; font-size: 0.9em; }
+        .upload-zone input { display: none; }
+
+        /* Status */
+        .status {
+            background: #1a2a3a;
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .status.show { display: block; }
+        .status.ok { border-left: 4px solid #4caf50; }
+        .status.error { border-left: 4px solid #f44336; }
+        .status .info { color: #90a4ae; font-size: 0.85em; margin-top: 5px; }
+
+        /* Buttons */
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .actions.show { display: flex; }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: #3a7ca5; color: white; }
+        .btn-primary:hover { background: #4a9cc5; }
+        .btn-secondary { background: #2d4a5a; color: #7ec8e3; border: 1px solid #3a7ca5; }
+        .btn-secondary:hover { background: #3a5a6a; }
+        .btn-all { background: #4caf50; color: white; }
+        .btn-all:hover { background: #66bb6a; }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 0;
+            display: none;
+        }
+        .tabs.show { display: flex; }
+        .tab {
+            padding: 10px 20px;
+            background: #1a2a3a;
+            border: 1px solid #2d4a5a;
+            border-bottom: none;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            color: #90a4ae;
+            font-size: 0.85em;
+        }
+        .tab.active { background: #1e3348; color: #7ec8e3; border-color: #3a7ca5; }
+
+        /* Table */
+        .table-wrap {
+            background: #1e3348;
+            border: 1px solid #3a7ca5;
+            border-radius: 0 8px 8px 8px;
+            overflow: auto;
+            max-height: 65vh;
+            display: none;
+        }
+        .table-wrap.show { display: block; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82em;
+        }
+        thead { position: sticky; top: 0; z-index: 2; }
+        th {
+            background: #2d4a5a;
+            color: #7ec8e3;
+            padding: 10px 8px;
+            text-align: left;
+            white-space: nowrap;
+            border-bottom: 2px solid #3a7ca5;
+        }
+        td {
+            padding: 7px 8px;
+            border-bottom: 1px solid #253545;
+            white-space: nowrap;
+        }
+        tr:hover td { background: #253a4a; }
+        .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .total-fase td { background: #1a3040; font-weight: 600; color: #7ec8e3; }
+        .total-dia td { background: #1a2530; font-weight: 700; color: #4caf50; }
+
+        /* Summary cards */
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .cards.show { display: grid; }
+        .card {
+            background: #1a2a3a;
+            border-radius: 8px;
+            padding: 15px;
+            border-left: 3px solid #3a7ca5;
+        }
+        .card .label { font-size: 0.8em; color: #90a4ae; }
+        .card .value { font-size: 1.5em; font-weight: 700; color: #7ec8e3; margin-top: 4px; }
+        .card .sub { font-size: 0.75em; color: #6a8a9a; margin-top: 2px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>KPI Perforacion y Tronadura - Dashboard</h1>
+        <p>Sube el archivo Excel KPI PyT para visualizar y exportar a CSV</p>
+    </div>
+
+    <div class="container">
+        <div class="upload-zone" id="uploadZone">
+            <h2>Arrastra el archivo Excel aqui</h2>
+            <p>o haz clic para seleccionar (.xlsx)</p>
+            <input type="file" id="fileInput" accept=".xlsx,.xls">
+        </div>
+
+        <div class="status" id="status"></div>
+
+        <div class="cards" id="cards"></div>
+
+        <div class="actions" id="actions">
+            <button class="btn btn-all" onclick="descargarTodos()">Descargar Todos los CSV</button>
+            <button class="btn btn-primary" onclick="descargarCSV('metros')">CSV Metros</button>
+            <button class="btn btn-primary" onclick="descargarCSV('roc')">CSV ROC</button>
+            <button class="btn btn-primary" onclick="descargarCSV('resumen')">CSV Resumen Diario</button>
+        </div>
+
+        <div class="tabs" id="tabs">
+            <div class="tab active" onclick="mostrarTab('metros')">Metros por Equipo</div>
+            <div class="tab" onclick="mostrarTab('roc')">Metros ROC</div>
+            <div class="tab" onclick="mostrarTab('resumen')">Resumen Diario</div>
+        </div>
+
+        <div class="table-wrap" id="tableWrap">
+            <table id="dataTable">
+                <thead id="tableHead"></thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+<script>
+// ── Config: estructura del Excel KPI ──
+const HOJAS_EXCLUIDAS = new Set(["Datos", "Datos ", "Patios", "Patios "]);
+const SECCIONES_FASES = [
+    { fase: "F12", filaInicio: 6, filaTotal: 9 },
+    { fase: "F10", filaInicio: 11, filaTotal: 15 },
+    { fase: "F09", filaInicio: 17, filaTotal: 25 },
+    { fase: "F11", filaInicio: 27, filaTotal: 31 },
+];
+const FILA_TOTAL_METROS = 34;
+const FILAS_ROC = { "F09": 38, "F10": 39, "F11": 40, "F12": 41 };
+const FILA_PLAN_ROC = 42;
+
+// ── State ──
+let datosMetros = [];
+let datosRoc = [];
+let datosResumen = [];
+let tabActual = "metros";
+
+// ── Helpers ──
+function safeFloat(v) {
+    if (v == null || v === "" || v === undefined) return 0;
+    const n = Number(v);
+    return isNaN(n) ? 0 : n;
+}
+function safeStr(v) {
+    if (v == null || v === undefined) return "";
+    return String(v).trim();
+}
+function cellVal(sheet, col, row) {
+    const addr = col + row;
+    const cell = sheet[addr];
+    return cell ? cell.v : null;
+}
+function pct(v) {
+    return v ? Math.round(v * 1000) / 10 : 0;
+}
+
+// ── Parse Excel ──
+function procesarExcel(workbook) {
+    datosMetros = [];
+    datosRoc = [];
+    datosResumen = [];
+
+    const hojasFecha = workbook.SheetNames.filter(n => !HOJAS_EXCLUIDAS.has(n.trim()));
+
+    for (const nombreHoja of hojasFecha) {
+        const sheet = workbook.Sheets[nombreHoja];
+        const fecha = nombreHoja.trim();
+
+        let totalDia_TA = 0, totalDia_TB = 0, totalDia_T = 0, totalDia_Plan = 0;
+        let totalDia_CTA = 0, totalDia_CTB = 0, totalDia_CD = 0;
+        const fasesResumen = {};
+
+        // Metros por fase y equipo
+        for (const sec of SECCIONES_FASES) {
+            for (let fila = sec.filaInicio; fila < sec.filaTotal; fila++) {
+                const equipo = safeStr(cellVal(sheet, "C", fila));
+                if (!equipo || equipo === "TOTAL") continue;
+
+                datosMetros.push({
+                    Fecha: fecha,
+                    Fase: sec.fase,
+                    Equipo: equipo,
+                    Turno_A: safeFloat(cellVal(sheet, "D", fila)),
+                    Turno_B: safeFloat(cellVal(sheet, "E", fila)),
+                    Total: safeFloat(cellVal(sheet, "F", fila)),
+                    Plan: safeFloat(cellVal(sheet, "G", fila)),
+                    Cumplimiento_TA: pct(safeFloat(cellVal(sheet, "H", fila))),
+                    Cumplimiento_TB: pct(safeFloat(cellVal(sheet, "I", fila))),
+                    Cumplimiento_Diario: pct(safeFloat(cellVal(sheet, "K", fila))),
+                    Estado_TA: safeStr(cellVal(sheet, "M", fila)),
+                    Estado_TB: safeStr(cellVal(sheet, "N", fila)),
+                    Tipo: "Equipo",
+                });
+            }
+
+            // Total fase
+            const ft = sec.filaTotal;
+            const faseData = {
+                Fecha: fecha,
+                Fase: sec.fase,
+                Equipo: "TOTAL_FASE",
+                Turno_A: safeFloat(cellVal(sheet, "D", ft)),
+                Turno_B: safeFloat(cellVal(sheet, "E", ft)),
+                Total: safeFloat(cellVal(sheet, "F", ft)),
+                Plan: safeFloat(cellVal(sheet, "G", ft)),
+                Cumplimiento_TA: pct(safeFloat(cellVal(sheet, "H", ft))),
+                Cumplimiento_TB: pct(safeFloat(cellVal(sheet, "I", ft))),
+                Cumplimiento_Diario: pct(safeFloat(cellVal(sheet, "K", ft))),
+                Estado_TA: "",
+                Estado_TB: "",
+                Tipo: "Total_Fase",
+            };
+            datosMetros.push(faseData);
+            fasesResumen[sec.fase] = faseData;
+        }
+
+        // Total dia
+        const td = FILA_TOTAL_METROS;
+        totalDia_TA = safeFloat(cellVal(sheet, "D", td));
+        totalDia_TB = safeFloat(cellVal(sheet, "E", td));
+        totalDia_T = safeFloat(cellVal(sheet, "F", td));
+        totalDia_Plan = safeFloat(cellVal(sheet, "G", td));
+        totalDia_CTA = pct(safeFloat(cellVal(sheet, "H", td)));
+        totalDia_CTB = pct(safeFloat(cellVal(sheet, "I", td)));
+        totalDia_CD = pct(safeFloat(cellVal(sheet, "K", td)));
+
+        datosMetros.push({
+            Fecha: fecha, Fase: "TODAS", Equipo: "TOTAL_DIA",
+            Turno_A: totalDia_TA, Turno_B: totalDia_TB, Total: totalDia_T,
+            Plan: totalDia_Plan,
+            Cumplimiento_TA: totalDia_CTA, Cumplimiento_TB: totalDia_CTB,
+            Cumplimiento_Diario: totalDia_CD,
+            Estado_TA: "", Estado_TB: "", Tipo: "Total_Dia",
+        });
+
+        // ROC
+        let rocTotal = 0;
+        for (const [fase, fila] of Object.entries(FILAS_ROC)) {
+            const val = safeFloat(cellVal(sheet, "F", fila));
+            datosRoc.push({ Fecha: fecha, Fase: fase, Metros_ROC: val });
+            rocTotal += val;
+        }
+        const rocTA = safeFloat(cellVal(sheet, "D", FILA_PLAN_ROC));
+        const rocTB = safeFloat(cellVal(sheet, "E", FILA_PLAN_ROC));
+        const rocTotalF = safeFloat(cellVal(sheet, "F", FILA_PLAN_ROC));
+        const rocPlan = safeFloat(cellVal(sheet, "C", FILA_PLAN_ROC));
+        datosRoc.push({
+            Fecha: fecha, Fase: "TOTAL_ROC", Metros_ROC: rocTotalF,
+            Turno_A_ROC: rocTA, Turno_B_ROC: rocTB, Plan_Diario_ROC: rocPlan,
+        });
+
+        // Resumen diario
+        const res = {
+            Fecha: fecha,
+            Total_Turno_A: totalDia_TA, Total_Turno_B: totalDia_TB,
+            Total_Metros: totalDia_T, Plan_Total: totalDia_Plan,
+            Cumplimiento_Diario: totalDia_CD,
+            ROC_Total: rocTotalF, ROC_Plan: rocPlan,
+        };
+        for (const f of ["F09", "F10", "F11", "F12"]) {
+            const fd = fasesResumen[f];
+            res[f + "_Total"] = fd ? fd.Total : 0;
+            res[f + "_Plan"] = fd ? fd.Plan : 0;
+            res[f + "_Cump"] = fd ? fd.Cumplimiento_Diario : 0;
+        }
+        datosResumen.push(res);
+    }
+
+    return hojasFecha.length;
+}
+
+// ── Render ──
+function mostrarStatus(msg, tipo, info) {
+    const el = document.getElementById("status");
+    el.className = "status show " + tipo;
+    el.innerHTML = `<strong>${msg}</strong>` + (info ? `<div class="info">${info}</div>` : "");
+}
+
+function mostrarCards() {
+    const el = document.getElementById("cards");
+    if (!datosResumen.length) { el.className = "cards"; return; }
+
+    const totalM = datosResumen.reduce((s, r) => s + r.Total_Metros, 0);
+    const totalP = datosResumen.reduce((s, r) => s + r.Plan_Total, 0);
+    const totalROC = datosResumen.reduce((s, r) => s + r.ROC_Total, 0);
+    const dias = datosResumen.length;
+    const cump = totalP > 0 ? (totalM / totalP * 100).toFixed(1) : "0.0";
+
+    el.className = "cards show";
+    el.innerHTML = `
+        <div class="card"><div class="label">Dias Procesados</div><div class="value">${dias}</div></div>
+        <div class="card"><div class="label">Total Metros Perforados</div><div class="value">${totalM.toLocaleString("es-CL", {maximumFractionDigits: 0})}</div><div class="sub">Plan: ${totalP.toLocaleString("es-CL", {maximumFractionDigits: 0})}</div></div>
+        <div class="card"><div class="label">Cumplimiento Global</div><div class="value">${cump}%</div></div>
+        <div class="card"><div class="label">Total Metros ROC</div><div class="value">${totalROC.toLocaleString("es-CL", {maximumFractionDigits: 0})}</div></div>
+    `;
+}
+
+function mostrarTab(tab) {
+    tabActual = tab;
+    document.querySelectorAll(".tab").forEach((t, i) => {
+        t.className = "tab" + (["metros", "roc", "resumen"][i] === tab ? " active" : "");
+    });
+    renderTabla();
+}
+
+function renderTabla() {
+    const head = document.getElementById("tableHead");
+    const body = document.getElementById("tableBody");
+    let cols, datos;
+
+    if (tabActual === "metros") {
+        cols = ["Fecha","Fase","Equipo","Turno_A","Turno_B","Total","Plan","Cumplimiento_TA","Cumplimiento_TB","Cumplimiento_Diario","Estado_TA","Estado_TB"];
+        datos = datosMetros;
+    } else if (tabActual === "roc") {
+        cols = ["Fecha","Fase","Metros_ROC","Turno_A_ROC","Turno_B_ROC","Plan_Diario_ROC"];
+        datos = datosRoc;
+    } else {
+        cols = ["Fecha","Total_Turno_A","Total_Turno_B","Total_Metros","Plan_Total","Cumplimiento_Diario","ROC_Total","ROC_Plan","F09_Total","F09_Plan","F09_Cump","F10_Total","F10_Plan","F10_Cump","F11_Total","F11_Plan","F11_Cump","F12_Total","F12_Plan","F12_Cump"];
+        datos = datosResumen;
+    }
+
+    const numCols = new Set(cols.filter(c => c !== "Fecha" && c !== "Fase" && c !== "Equipo" && !c.startsWith("Estado")));
+
+    head.innerHTML = "<tr>" + cols.map(c => `<th>${c.replace(/_/g, " ")}</th>`).join("") + "</tr>";
+
+    let html = "";
+    for (const row of datos) {
+        let cls = "";
+        if (row.Tipo === "Total_Fase") cls = ' class="total-fase"';
+        else if (row.Tipo === "Total_Dia") cls = ' class="total-dia"';
+
+        html += `<tr${cls}>`;
+        for (const c of cols) {
+            const v = row[c] !== undefined ? row[c] : "";
+            const isNum = numCols.has(c);
+            if (isNum && typeof v === "number") {
+                html += `<td class="num">${v.toLocaleString("es-CL", {minimumFractionDigits: 1, maximumFractionDigits: 1})}</td>`;
+            } else {
+                html += `<td>${v}</td>`;
+            }
+        }
+        html += "</tr>";
+    }
+    body.innerHTML = html;
+}
+
+// ── CSV Export ──
+function arrayToCSV(datos, cols) {
+    const sep = ";";
+    let csv = "\uFEFF"; // BOM
+    csv += cols.join(sep) + "\n";
+    for (const row of datos) {
+        csv += cols.map(c => {
+            const v = row[c] !== undefined ? row[c] : "";
+            if (typeof v === "string" && (v.includes(sep) || v.includes('"') || v.includes("\n"))) {
+                return '"' + v.replace(/"/g, '""') + '"';
+            }
+            return v;
+        }).join(sep) + "\n";
+    }
+    return csv;
+}
+
+function descargarBlob(contenido, nombre) {
+    const blob = new Blob([contenido], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nombre;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function descargarCSV(tipo) {
+    if (tipo === "metros") {
+        const cols = ["Fecha","Fase","Equipo","Turno_A","Turno_B","Total","Plan","Cumplimiento_TA","Cumplimiento_TB","Cumplimiento_Diario","Estado_TA","Estado_TB","Tipo"];
+        descargarBlob(arrayToCSV(datosMetros, cols), "kpi_metros.csv");
+    } else if (tipo === "roc") {
+        const cols = ["Fecha","Fase","Metros_ROC","Turno_A_ROC","Turno_B_ROC","Plan_Diario_ROC"];
+        descargarBlob(arrayToCSV(datosRoc, cols), "kpi_roc.csv");
+    } else {
+        const cols = ["Fecha","Total_Turno_A","Total_Turno_B","Total_Metros","Plan_Total","Cumplimiento_Diario","ROC_Total","ROC_Plan","F09_Total","F09_Plan","F09_Cump","F10_Total","F10_Plan","F10_Cump","F11_Total","F11_Plan","F11_Cump","F12_Total","F12_Plan","F12_Cump"];
+        descargarBlob(arrayToCSV(datosResumen, cols), "kpi_resumen_diario.csv");
+    }
+}
+
+function descargarTodos() {
+    descargarCSV("metros");
+    setTimeout(() => descargarCSV("roc"), 300);
+    setTimeout(() => descargarCSV("resumen"), 600);
+}
+
+// ── File handling ──
+function procesarArchivo(file) {
+    if (!file) return;
+    mostrarStatus("Procesando: " + file.name + "...", "ok");
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const wb = XLSX.read(data, { type: "array" });
+            const total = procesarExcel(wb);
+
+            mostrarStatus(
+                `${file.name} cargado correctamente`,
+                "ok",
+                `${total} dias procesados | ${datosMetros.length} filas de metros | ${datosRoc.length} filas ROC`
+            );
+            mostrarCards();
+
+            document.getElementById("actions").className = "actions show";
+            document.getElementById("tabs").className = "tabs show";
+            document.getElementById("tableWrap").className = "table-wrap show";
+
+            mostrarTab("metros");
+        } catch (err) {
+            mostrarStatus("Error al procesar el archivo: " + err.message, "error");
+            console.error(err);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+// ── Events ──
+const uploadZone = document.getElementById("uploadZone");
+const fileInput = document.getElementById("fileInput");
+
+uploadZone.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", (e) => procesarArchivo(e.target.files[0]));
+
+uploadZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    uploadZone.classList.add("dragover");
+});
+uploadZone.addEventListener("dragleave", () => uploadZone.classList.remove("dragover"));
+uploadZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove("dragover");
+    procesarArchivo(e.dataTransfer.files[0]);
+});
+</script>
+</body>
+</html>
