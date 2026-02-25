@@ -282,6 +282,44 @@ td.bg-real { background: hsl(210, 17%, 95%, 0.1); }
 
 /* SVG icon */
 .icon { width: 16px; height: 16px; display: inline-block; vertical-align: middle; }
+
+/* Comparison Tab */
+.comp-meses-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.comp-mes-chip {
+  display: inline-flex; align-items: center; gap: 0.375rem;
+  padding: 0.3rem 0.75rem; border: 1.5px solid var(--border);
+  border-radius: 999px; background: var(--secondary);
+  font-size: 0.8125rem; cursor: pointer; transition: all 0.15s;
+  user-select: none;
+}
+.comp-mes-chip:hover { border-color: var(--primary); }
+.comp-mes-chip input[type=checkbox] { accent-color: var(--primary); width: 14px; height: 14px; cursor: pointer; }
+.comp-mes-chip.checked { background: var(--accent); border-color: var(--primary); color: var(--accent-foreground); font-weight: 600; }
+
+/* Cascade table */
+.cascada-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.cascada-table th { background: var(--table-header); color: #fff; padding: 0.5rem 0.75rem; text-align: right; white-space: nowrap; }
+.cascada-table th:first-child { text-align: left; }
+.cascada-table td { padding: 0.45rem 0.75rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.cascada-table td:not(:first-child) { text-align: right; font-family: monospace; }
+.cascada-table tr:hover td { background: var(--table-row-hover); }
+.cascada-section { background: var(--secondary); font-weight: 700; }
+.cascada-result { border-top: 2px solid; }
+.cascada-result.disp { border-color: var(--success); background: var(--success-light); }
+.cascada-result.uebd { border-color: var(--primary); background: var(--accent); }
+.cascada-loss td:first-child { padding-left: 1.75rem; color: var(--muted-foreground); }
+.cascada-sub td:first-child { padding-left: 2.5rem; color: var(--muted-foreground); font-style: italic; }
+.cascada-spacer td { padding: 0; height: 6px; background: var(--border); }
+.cascada-metros { background: var(--secondary); font-weight: 700; border-top: 2px solid var(--primary); }
+.cascada-kpi td:first-child { padding-left: 1.25rem; }
+.pct-pill {
+  display: inline-block; padding: 0.1rem 0.45rem;
+  border-radius: 999px; font-size: 0.75rem; font-weight: 700;
+}
+.pct-good { background: var(--success-light); color: var(--success); }
+.pct-info { background: var(--info-light); color: var(--info); }
+.comp-charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+@media (max-width: 900px) { .comp-charts-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -324,6 +362,7 @@ td.bg-real { background: hsl(210, 17%, 95%, 0.1); }
   <div class="tabs-list">
     <button class="tab-trigger active" data-tab="diario" onclick="switchTab('diario')">&#x1F4C5; Análisis Diario/Semanal</button>
     <button class="tab-trigger" data-tab="mensual" onclick="switchTab('mensual')">&#x1F4C6; Análisis Mensual</button>
+    <button class="tab-trigger" data-tab="comparacion" onclick="switchTab('comparacion')">&#x1F4CA; Comparación Mensual</button>
   </div>
 
   <!-- Daily Tab -->
@@ -391,6 +430,35 @@ td.bg-real { background: hsl(210, 17%, 95%, 0.1); }
         </div>
       </div>
       <div id="monthly-results"></div>
+    </div>
+  </div>
+
+  <!-- Comparison Tab -->
+  <div id="tab-comparacion" class="tab-content">
+    <div class="space-y">
+      <div class="card controls-card">
+        <div class="controls-row" style="align-items:flex-start;flex-wrap:wrap;gap:1.25rem">
+          <div class="control-group" style="flex:1;min-width:260px">
+            <label class="control-label">Meses a comparar</label>
+            <div id="comp-meses-container" class="comp-meses-chips">
+              <span style="color:var(--muted-foreground);font-size:0.875rem">Carga el archivo UEBD o KPI primero</span>
+            </div>
+          </div>
+          <div class="control-group">
+            <label class="control-label">Equipo</label>
+            <select id="filtro-equipo-comp" class="control-input">
+              <option value="TODOS">Todos los equipos</option>
+            </select>
+          </div>
+          <div class="control-group" style="justify-content:flex-end">
+            <button class="btn btn-primary" onclick="renderComparacion()">
+              <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              Comparar
+            </button>
+          </div>
+        </div>
+      </div>
+      <div id="comp-results"></div>
     </div>
   </div>
 </div>
@@ -1993,6 +2061,251 @@ function actualizarMensual() {
 }
 
 // ============================================
+// COMPARISON TAB
+// ============================================
+function updateComparacionFilters() {
+  // Collect all available months from UEBD, Dispatch and KPI
+  const mesesSet = new Set();
+  datosUEBD.forEach(r => { if (r.fecha) mesesSet.add(r.fecha.substring(0, 7)); });
+  datosDispatch.forEach(r => { if (r.fecha) mesesSet.add(r.fecha.substring(0, 7)); });
+  Object.values(datosKPI).forEach(fm => Object.keys(fm).forEach(f => mesesSet.add(f.substring(0, 7))));
+
+  const sorted = Array.from(mesesSet).sort();
+  const container = document.getElementById('comp-meses-container');
+  if (!container) return;
+
+  // Keep previously checked months
+  const prevChecked = new Set(
+    Array.from(container.querySelectorAll('input[type=checkbox]:checked')).map(cb => cb.value)
+  );
+  const isFirstLoad = prevChecked.size === 0;
+
+  container.innerHTML = '';
+  if (sorted.length === 0) {
+    container.innerHTML = '<span style="color:var(--muted-foreground);font-size:0.875rem">Carga el archivo UEBD o KPI primero</span>';
+    return;
+  }
+
+  sorted.forEach(mes => {
+    const label = getNombreMes(mes);
+    const checked = isFirstLoad || prevChecked.has(mes);
+    const chip = document.createElement('label');
+    chip.className = 'comp-mes-chip' + (checked ? ' checked' : '');
+    chip.innerHTML = `<input type="checkbox" value="${mes}" ${checked ? 'checked' : ''}> ${label}`;
+    chip.querySelector('input').addEventListener('change', function() {
+      chip.classList.toggle('checked', this.checked);
+    });
+    container.appendChild(chip);
+  });
+
+  // Update equipment filter
+  const rigs = new Set();
+  datosUEBD.forEach(r => rigs.add(r.rig));
+  datosDispatch.forEach(r => rigs.add(r.rig));
+  const sel = document.getElementById('filtro-equipo-comp');
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="TODOS">Todos los equipos</option>';
+  sortRigs(Array.from(rigs)).forEach(rig => {
+    const opt = document.createElement('option');
+    opt.value = rig; opt.textContent = rig;
+    sel.appendChild(opt);
+  });
+  if (prev && Array.from(rigs).includes(prev)) sel.value = prev;
+}
+
+function renderComparacion() {
+  const meses = Array.from(document.querySelectorAll('#comp-meses-container input[type=checkbox]:checked'))
+    .map(cb => cb.value).sort();
+
+  if (meses.length === 0) {
+    showToast('Selecciona al menos un mes para comparar', 'error');
+    return;
+  }
+
+  const filtroEquipo = document.getElementById('filtro-equipo-comp').value;
+  showLoading('Calculando comparación...', `${meses.length} meses seleccionados`);
+
+  setTimeout(() => {
+    try {
+      // Calculate metrics for each month
+      const metricasPorMes = {};
+      meses.forEach(mes => {
+        const m = calcularMetricasMensuales(datosUEBD, [mes], filtroEquipo, datosDispatch);
+        metricasPorMes[mes] = m.total;
+      });
+
+      const container = document.getElementById('comp-results');
+      container.innerHTML = '';
+      container.appendChild(buildCascadaTable(meses, metricasPorMes));
+      container.appendChild(buildCascadaCharts(meses, metricasPorMes));
+    } catch (err) {
+      console.error('[Comparación]', err);
+      showToast('Error al calcular: ' + err.message, 'error');
+    } finally {
+      hideLoading();
+    }
+  }, 50);
+}
+
+function buildCascadaTable(meses, metricasPorMes) {
+  const totalH = m => m.efectivoTotal + m.reserva + m.demoraProgramada + m.demoraNoProgramada + m.mantencionProgramada + m.mantencionNoProgramada;
+  const f1 = v => v.toFixed(1);
+  const fHrs = v => v.toFixed(1) + ' h';
+  const fPct = (v, tot) => tot > 0 ? '<span class="pct-pill pct-info">' + (v / tot * 100).toFixed(1) + '%</span>' : '—';
+  const fPctGood = (v, tot) => tot > 0 ? '<span class="pct-pill pct-good">' + (v / tot * 100).toFixed(1) + '%</span>' : '—';
+  const fRend = (m, t) => m > 0 && t > 0 ? f1(m / t) + ' m/h' : '—';
+
+  const cols = meses.map(mes => {
+    const m = metricasPorMes[mes];
+    const tot = totalH(m);
+    const disp = m.efectivoTotal + m.reserva + m.demoraProgramada + m.demoraNoProgramada;
+    const noPerf = m.efectivoTotal - m.efectivoPerforando;
+    return { m, tot, disp, noPerf };
+  });
+
+  const header = `<tr>
+    <th style="text-align:left;min-width:200px">Métrica</th>
+    ${meses.map(mes => `<th>${getNombreMes(mes)}</th>`).join('')}
+  </tr>`;
+
+  const row = (label, cls, fn) =>
+    `<tr class="${cls}"><td>${label}</td>${cols.map(c => `<td>${fn(c)}</td>`).join('')}</tr>`;
+
+  const spacer = `<tr class="cascada-spacer"><td colspan="${meses.length + 1}"></td></tr>`;
+
+  const tbody = [
+    row('📊 Horas Totales (calendario)', 'cascada-section',
+      ({ tot }) => `<strong>${fHrs(tot)}</strong>`),
+    row('&nbsp;&nbsp;(−) Mant. Programada', 'cascada-loss',
+      ({ m, tot }) => `${fHrs(m.mantencionProgramada)} ${fPct(m.mantencionProgramada, tot)}`),
+    row('&nbsp;&nbsp;(−) Mant. No Programada', 'cascada-loss',
+      ({ m, tot }) => `${fHrs(m.mantencionNoProgramada)} ${fPct(m.mantencionNoProgramada, tot)}`),
+    row('✅ Disponibilidad', 'cascada-result disp',
+      ({ disp, tot }) => `<strong>${fHrs(disp)}</strong> ${fPctGood(disp, tot)}`),
+    row('&nbsp;&nbsp;(−) Demora Programada', 'cascada-loss',
+      ({ m, tot }) => `${fHrs(m.demoraProgramada)} ${fPct(m.demoraProgramada, tot)}`),
+    row('&nbsp;&nbsp;(−) Demora No Programada', 'cascada-loss',
+      ({ m, tot }) => `${fHrs(m.demoraNoProgramada)} ${fPct(m.demoraNoProgramada, tot)}`),
+    row('&nbsp;&nbsp;(−) Reserva (sin uso)', 'cascada-loss',
+      ({ m, tot }) => `${fHrs(m.reserva)} ${fPct(m.reserva, tot)}`),
+    row('⚡ Efectivo Total (UEBD)', 'cascada-result uebd',
+      ({ m, disp, tot }) => `<strong>${fHrs(m.efectivoTotal)}</strong> ${fPctGood(m.efectivoTotal, tot)} <span style="color:var(--muted-foreground);font-size:0.75rem">(${disp > 0 ? (m.efectivoTotal / disp * 100).toFixed(1) : '—'}% de disp.)</span>`),
+    row('&nbsp;&nbsp;&nbsp;↳ Efectivo Perforando', 'cascada-sub',
+      ({ m, tot }) => `${fHrs(m.efectivoPerforando)} ${fPct(m.efectivoPerforando, tot)}`),
+    row('&nbsp;&nbsp;&nbsp;↳ Efectivo No Perforando', 'cascada-sub',
+      ({ noPerf, tot }) => `${fHrs(noPerf)} ${fPct(noPerf, tot)}`),
+    spacer,
+    row('⛏️ Metros Perforados', 'cascada-metros',
+      ({ m }) => `<strong>${m.metros.toLocaleString('es-CL', { maximumFractionDigits: 0 })} m</strong>`),
+    row('&nbsp;&nbsp;Rend. Efectivo', 'cascada-kpi',
+      ({ m }) => fRend(m.metros, m.efectivoPerforando)),
+    row('&nbsp;&nbsp;Rend. ASARCO', 'cascada-kpi',
+      ({ m }) => fRend(m.metros, m.efectivoTotal)),
+  ].join('');
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.style.cssText = 'padding:1.25rem;margin-bottom:1rem;overflow-x:auto';
+  card.innerHTML = `
+    <h3 style="font-size:1rem;font-weight:700;margin-bottom:1rem">📊 Cascada de Métricas por Mes</h3>
+    <table class="cascada-table"><thead>${header}</thead><tbody>${tbody}</tbody></table>`;
+  return card;
+}
+
+function buildCascadaCharts(meses, metricasPorMes) {
+  const totalH = m => m.efectivoTotal + m.reserva + m.demoraProgramada + m.demoraNoProgramada + m.mantencionProgramada + m.mantencionNoProgramada;
+  const pct = (v, tot) => tot > 0 ? +(v / tot * 100).toFixed(2) : 0;
+  const labels = meses.map(getNombreMes);
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.style.cssText = 'padding:1.25rem;margin-bottom:1rem';
+  card.innerHTML = `
+    <h3 style="font-size:1rem;font-weight:700;margin-bottom:1rem">📈 Visualización por Mes</h3>
+    <div class="comp-charts-grid">
+      <div>
+        <p style="font-size:0.8125rem;font-weight:600;color:var(--muted-foreground);margin-bottom:0.5rem">Distribución de Tiempos (%)</p>
+        <canvas id="chart-comp-dist" height="320"></canvas>
+      </div>
+      <div>
+        <p style="font-size:0.8125rem;font-weight:600;color:var(--muted-foreground);margin-bottom:0.5rem">Indicadores Clave</p>
+        <canvas id="chart-comp-kpi" height="320"></canvas>
+      </div>
+    </div>`;
+
+  requestAnimationFrame(() => {
+    ['comp-dist', 'comp-kpi'].forEach(k => { if (chartInstances[k]) { chartInstances[k].destroy(); delete chartInstances[k]; } });
+
+    const ctxDist = document.getElementById('chart-comp-dist');
+    if (ctxDist) {
+      chartInstances['comp-dist'] = new Chart(ctxDist, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Efect. Perforando', stack: 's', backgroundColor: '#0369a1',
+              data: meses.map(m => { const t = totalH(metricasPorMes[m]); return pct(metricasPorMes[m].efectivoPerforando, t); }) },
+            { label: 'Efect. No Perforando', stack: 's', backgroundColor: '#7dd3fc',
+              data: meses.map(m => { const t = totalH(metricasPorMes[m]); const np = metricasPorMes[m].efectivoTotal - metricasPorMes[m].efectivoPerforando; return pct(np, t); }) },
+            { label: 'Reserva', stack: 's', backgroundColor: '#c4b5fd',
+              data: meses.map(m => pct(metricasPorMes[m].reserva, totalH(metricasPorMes[m]))) },
+            { label: 'Demora No Prog.', stack: 's', backgroundColor: '#ef4444',
+              data: meses.map(m => pct(metricasPorMes[m].demoraNoProgramada, totalH(metricasPorMes[m]))) },
+            { label: 'Demora Prog.', stack: 's', backgroundColor: '#fb923c',
+              data: meses.map(m => pct(metricasPorMes[m].demoraProgramada, totalH(metricasPorMes[m]))) },
+            { label: 'Mant. No Prog.', stack: 's', backgroundColor: '#6b7280',
+              data: meses.map(m => pct(metricasPorMes[m].mantencionNoProgramada, totalH(metricasPorMes[m]))) },
+            { label: 'Mant. Prog.', stack: 's', backgroundColor: '#d1d5db',
+              data: meses.map(m => pct(metricasPorMes[m].mantencionProgramada, totalH(metricasPorMes[m]))) },
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } } },
+          scales: {
+            x: { stacked: true },
+            y: { stacked: true, min: 0, max: 100, ticks: { callback: v => v + '%' } }
+          }
+        }
+      });
+    }
+
+    const ctxKPI = document.getElementById('chart-comp-kpi');
+    if (ctxKPI) {
+      chartInstances['comp-kpi'] = new Chart(ctxKPI, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Disponibilidad (%)', backgroundColor: 'rgba(34,197,94,0.8)', yAxisID: 'yPct',
+              data: meses.map(m => { const t = totalH(metricasPorMes[m]); const d = metricasPorMes[m].efectivoTotal + metricasPorMes[m].reserva + metricasPorMes[m].demoraProgramada + metricasPorMes[m].demoraNoProgramada; return t > 0 ? +(d / t * 100).toFixed(1) : 0; }) },
+            { label: 'UEBD (%)', backgroundColor: 'rgba(14,165,233,0.8)', yAxisID: 'yPct',
+              data: meses.map(m => { const t = totalH(metricasPorMes[m]); return pct(metricasPorMes[m].efectivoTotal, t); }) },
+            { label: 'Rend. Efectivo (m/h)', type: 'line', borderColor: '#8b5cf6', backgroundColor: '#8b5cf6',
+              yAxisID: 'yRend', tension: 0.3, pointRadius: 5, pointHoverRadius: 7,
+              data: meses.map(m => { const mm = metricasPorMes[m]; return mm.efectivoPerforando > 0 ? +(mm.metros / mm.efectivoPerforando).toFixed(2) : 0; }) },
+            { label: 'Rend. ASARCO (m/h)', type: 'line', borderColor: '#f59e0b', backgroundColor: '#f59e0b',
+              yAxisID: 'yRend', tension: 0.3, pointRadius: 5, pointHoverRadius: 7, borderDash: [5, 3],
+              data: meses.map(m => { const mm = metricasPorMes[m]; return mm.efectivoTotal > 0 ? +(mm.metros / mm.efectivoTotal).toFixed(2) : 0; }) },
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } } },
+          scales: {
+            yPct: { type: 'linear', position: 'left', min: 0, max: 100, ticks: { callback: v => v + '%' } },
+            yRend: { type: 'linear', position: 'right', ticks: { callback: v => v + ' m/h' }, grid: { drawOnChartArea: false } }
+          }
+        }
+      });
+    }
+  });
+
+  return card;
+}
+
+// ============================================
 // FILE INPUT EVENT LISTENERS
 // ============================================
 document.getElementById('file-uebd').addEventListener('change', async function(e) {
@@ -2010,7 +2323,7 @@ document.getElementById('file-uebd').addEventListener('change', async function(e
     badge.textContent = 'Cargado: ' + datosUEBD.length + ' registros';
     badge.className = 'status-badge loaded';
     showToast('UEBD cargado: ' + datosUEBD.length + ' registros', 'success');
-    updateEquipmentFilters();
+    updateEquipmentFilters(); updateComparacionFilters();
   } catch (err) {
     showToast('Error al cargar UEBD', 'error');
     console.error(err);
@@ -2039,7 +2352,7 @@ document.getElementById('file-dispatch').addEventListener('change', async functi
     badge.textContent = 'Cargado: ' + datosDispatch.length + ' registros (' + (rigs || 'sin datos') + ')';
     badge.className = 'status-badge loaded';
     showToast('Dispatch cargado: ' + datosDispatch.length + ' registros', 'success');
-    updateEquipmentFilters();
+    updateEquipmentFilters(); updateComparacionFilters();
   } catch (err) {
     showToast('Error al cargar Dispatch', 'error');
     console.error(err);
@@ -2060,7 +2373,7 @@ document.getElementById('file-kpi').addEventListener('change', async function(e)
     badge.textContent = 'Cargado: ' + totalDias + ' días (' + (rigs || 'sin datos') + ')';
     badge.className = 'status-badge loaded';
     showToast('KPI cargado: ' + totalDias + ' días de metros', 'success');
-    updateEquipmentFilters();
+    updateEquipmentFilters(); updateComparacionFilters();
   } catch (err) {
     const msg = err && err.message ? err.message : String(err);
     showToast('Error KPI: ' + msg, 'error');
