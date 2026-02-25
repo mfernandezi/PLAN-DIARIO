@@ -320,6 +320,12 @@ td.bg-real { background: hsl(210, 17%, 95%, 0.1); }
 .pct-info { background: var(--info-light); color: var(--info); }
 .comp-charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
 @media (max-width: 900px) { .comp-charts-grid { grid-template-columns: 1fr; } }
+
+/* Chart download buttons */
+.chart-header { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.dl-btn { opacity: 0.55; font-size: 0.7rem !important; padding: 0.2rem 0.5rem !important; flex-shrink: 0; }
+.dl-btn:hover { opacity: 1; }
+.dl-bar { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; padding: 0.5rem 0 0; flex-wrap: wrap; }
 </style>
 </head>
 <body>
@@ -506,6 +512,81 @@ let metricaComparacionMensual = 'disponibilidad';
 let lastDailyMetricas = null;
 let lastMonthlyMetricas = null;
 let chartInstances = {};
+let lastComparacionMeses = [];
+let lastComparacionMetricas = {};
+
+// ============================================
+// DOWNLOAD HELPERS
+// ============================================
+function downloadChart(chartId, label) {
+  const chart = chartInstances[chartId];
+  if (!chart) { showToast('Gráfico aún no generado — pulsa Comparar primero', 'error'); return; }
+  const url = chart.toBase64Image('image/png', 1);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (label || chartId).replace(/[^\w-]/g, '_') + '_' + new Date().toISOString().slice(0, 10) + '.png';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+function downloadComparacionExcel() {
+  const meses = lastComparacionMeses;
+  const mp = lastComparacionMetricas;
+  if (!meses.length) { showToast('Genera la comparación primero', 'error'); return; }
+
+  const totalH = m => m.efectivoTotal + m.reserva + m.demoraProgramada + m.demoraNoProgramada + m.mantencionProgramada + m.mantencionNoProgramada;
+  const pct = (v, t) => t > 0 ? +(v / t * 100).toFixed(1) : 0;
+  const h = v => +v.toFixed(1);
+
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: Cascada
+  const cols = ['Métrica', ...meses.map(getNombreMes)];
+  const rows = [
+    cols,
+    ['Horas Totales',                  ...meses.map(m => h(totalH(mp[m])))],
+    ['(-) Mant. Programada (h)',        ...meses.map(m => h(mp[m].mantencionProgramada))],
+    ['(-) Mant. No Programada (h)',     ...meses.map(m => h(mp[m].mantencionNoProgramada))],
+    ['= Disponibilidad (h)',            ...meses.map(m => h(mp[m].efectivoTotal + mp[m].reserva + mp[m].demoraProgramada + mp[m].demoraNoProgramada))],
+    ['= Disponibilidad (%)',            ...meses.map(m => pct(mp[m].efectivoTotal + mp[m].reserva + mp[m].demoraProgramada + mp[m].demoraNoProgramada, totalH(mp[m])))],
+    ['(-) Demora Programada (h)',       ...meses.map(m => h(mp[m].demoraProgramada))],
+    ['(-) Demora No Programada (h)',    ...meses.map(m => h(mp[m].demoraNoProgramada))],
+    ['(-) Reserva (h)',                 ...meses.map(m => h(mp[m].reserva))],
+    ['= Efectivo Total / UEBD (h)',     ...meses.map(m => h(mp[m].efectivoTotal))],
+    ['= UEBD (% del total)',            ...meses.map(m => pct(mp[m].efectivoTotal, totalH(mp[m])))],
+    ['= UEBD (% de disponible)',        ...meses.map(m => { const d = mp[m].efectivoTotal + mp[m].reserva + mp[m].demoraProgramada + mp[m].demoraNoProgramada; return d > 0 ? +(mp[m].efectivoTotal / d * 100).toFixed(1) : 0; })],
+    ['  Efectivo Perforando (h)',       ...meses.map(m => h(mp[m].efectivoPerforando))],
+    ['  Efectivo No Perforando (h)',    ...meses.map(m => h(mp[m].efectivoTotal - mp[m].efectivoPerforando))],
+    [],
+    ['Metros Perforados (m)',           ...meses.map(m => +mp[m].metros.toFixed(0))],
+    ['Rend. Efectivo (m/h)',            ...meses.map(m => mp[m].efectivoPerforando > 0 ? +(mp[m].metros / mp[m].efectivoPerforando).toFixed(2) : 0)],
+    ['Rend. ASARCO (m/h)',              ...meses.map(m => mp[m].efectivoTotal > 0 ? +(mp[m].metros / mp[m].efectivoTotal).toFixed(2) : 0)],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Cascada');
+
+  // Sheet 2: Distribución por mes (raw hours)
+  const distRows = [
+    ['Mes', 'Efect. Perf. (h)', 'Efect. No Perf. (h)', 'Reserva (h)', 'Demora No Prog. (h)', 'Demora Prog. (h)', 'Mant. No Prog. (h)', 'Mant. Prog. (h)', 'Total (h)'],
+    ...meses.map(m => {
+      const mm = mp[m]; const t = totalH(mm);
+      return [getNombreMes(m), h(mm.efectivoPerforando), h(mm.efectivoTotal - mm.efectivoPerforando),
+        h(mm.reserva), h(mm.demoraNoProgramada), h(mm.demoraProgramada),
+        h(mm.mantencionNoProgramada), h(mm.mantencionProgramada), h(t)];
+    })
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(distRows), 'Dist. Tiempos');
+
+  const fname = 'Comparacion_' + meses[0] + '_a_' + meses[meses.length - 1] + '.xlsx';
+  XLSX.writeFile(wb, fname);
+  showToast('Descargado: ' + fname, 'success');
+}
+
+function downloadTodoComp() {
+  // Download Excel
+  downloadComparacionExcel();
+  // Download both comparison charts with small delay
+  setTimeout(() => downloadChart('chart-comp-dist', 'Distribucion_Tiempos'), 400);
+  setTimeout(() => downloadChart('chart-comp-kpi', 'Indicadores_Clave'), 800);
+}
 
 // ============================================
 // LOADING OVERLAY
@@ -1526,8 +1607,8 @@ function renderComparisonCharts(metricas, plan, metrica, periodos, labels, mode,
   const chartId2 = 'chart-periodo-' + tabId;
 
   let html = '<div class="charts-grid">';
-  html += '<div class="card chart-card"><h4>Por Perforadora (Promedio Período)</h4><div class="chart-container"><canvas id="' + chartId1 + '"></canvas></div></div>';
-  html += '<div class="card chart-card"><h4>Por ' + (mode === 'daily' ? 'Fecha' : 'Mes') + ' (Total/Promedio)</h4><div class="chart-container"><canvas id="' + chartId2 + '"></canvas></div></div>';
+  html += '<div class="card chart-card"><h4 class="chart-header">Por Perforadora<button class="btn btn-outline btn-sm dl-btn" onclick="downloadChart(\'' + chartId1 + '\',\'Plan_vs_Real_Perforadora\')">&#x2B07; PNG</button></h4><div class="chart-container"><canvas id="' + chartId1 + '"></canvas></div></div>';
+  html += '<div class="card chart-card"><h4 class="chart-header">Por ' + (mode === 'daily' ? 'Fecha' : 'Mes') + '<button class="btn btn-outline btn-sm dl-btn" onclick="downloadChart(\'' + chartId2 + '\',\'Plan_vs_Real_Periodo\')">&#x2B07; PNG</button></h4><div class="chart-container"><canvas id="' + chartId2 + '"></canvas></div></div>';
   html += '</div>';
 
   setTimeout(() => {
@@ -1597,9 +1678,9 @@ function renderPieCharts(metricas, tabId) {
   let html = '<div class="card table-card" style="margin-bottom:1rem">';
   html += '<div class="table-header-bar"><h3>&#x1F4CA; Distribución por Equipo</h3></div>';
   html += '<div style="padding:1rem"><div class="pie-grid">';
-  html += '<div class="card pie-card"><h4>Metros Perforados</h4><div class="pie-container"><canvas id="' + pieMetros + '"></canvas></div></div>';
-  html += '<div class="card pie-card"><h4>Horas Efectivas</h4><div class="pie-container"><canvas id="' + pieHoras + '"></canvas></div></div>';
-  html += '<div class="card pie-card"><h4>Distribución de Tiempos (Total)</h4><div class="pie-container"><canvas id="' + pieTiempos + '"></canvas></div></div>';
+  html += '<div class="card pie-card"><h4 class="chart-header">Metros Perforados<button class="btn btn-outline btn-sm dl-btn" onclick="downloadChart(\'' + pieMetros + '\',\'Dist_Metros\')">&#x2B07; PNG</button></h4><div class="pie-container"><canvas id="' + pieMetros + '"></canvas></div></div>';
+  html += '<div class="card pie-card"><h4 class="chart-header">Horas Efectivas<button class="btn btn-outline btn-sm dl-btn" onclick="downloadChart(\'' + pieHoras + '\',\'Dist_Horas\')">&#x2B07; PNG</button></h4><div class="pie-container"><canvas id="' + pieHoras + '"></canvas></div></div>';
+  html += '<div class="card pie-card"><h4 class="chart-header">Distribución de Tiempos<button class="btn btn-outline btn-sm dl-btn" onclick="downloadChart(\'' + pieTiempos + '\',\'Dist_Tiempos\')">&#x2B07; PNG</button></h4><div class="pie-container"><canvas id="' + pieTiempos + '"></canvas></div></div>';
   html += '</div></div></div>';
 
   setTimeout(() => {
@@ -2176,8 +2257,24 @@ function renderComparacion() {
         metricasPorMes[mes] = m.total;
       });
 
+      // Save for download functions
+      lastComparacionMeses = meses;
+      lastComparacionMetricas = metricasPorMes;
+
       const container = document.getElementById('comp-results');
       container.innerHTML = '';
+
+      // Action bar with download buttons
+      const bar = document.createElement('div');
+      bar.className = 'card dl-bar';
+      bar.style.cssText = 'padding:0.75rem 1rem;margin-bottom:0.5rem';
+      bar.innerHTML = `
+        <span style="font-size:0.8125rem;color:var(--muted-foreground)">Descargar:</span>
+        <button class="btn btn-outline btn-sm" onclick="downloadComparacionExcel()">&#x1F4E5; Excel (tabla cascada)</button>
+        <button class="btn btn-outline btn-sm" onclick="downloadChart('chart-comp-dist','Distribucion_Tiempos')">&#x2B07; PNG Distribución</button>
+        <button class="btn btn-outline btn-sm" onclick="downloadChart('chart-comp-kpi','Indicadores_Clave')">&#x2B07; PNG Indicadores</button>
+        <button class="btn btn-primary btn-sm" onclick="downloadTodoComp()">&#x1F4E6; Descargar todo</button>`;
+      container.appendChild(bar);
       container.appendChild(buildCascadaTable(meses, metricasPorMes));
       container.appendChild(buildCascadaCharts(meses, metricasPorMes));
     } catch (err) {
@@ -2249,7 +2346,10 @@ function buildCascadaTable(meses, metricasPorMes) {
   card.className = 'card';
   card.style.cssText = 'padding:1.25rem;margin-bottom:1rem;overflow-x:auto';
   card.innerHTML = `
-    <h3 style="font-size:1rem;font-weight:700;margin-bottom:1rem">📊 Cascada de Métricas por Mes</h3>
+    <div class="chart-header" style="margin-bottom:1rem">
+      <h3 style="font-size:1rem;font-weight:700">📊 Cascada de Métricas por Mes</h3>
+      <button class="btn btn-outline btn-sm dl-btn" style="opacity:1" onclick="downloadComparacionExcel()">&#x1F4E5; Descargar Excel</button>
+    </div>
     <table class="cascada-table"><thead>${header}</thead><tbody>${tbody}</tbody></table>`;
   return card;
 }
@@ -2266,11 +2366,17 @@ function buildCascadaCharts(meses, metricasPorMes) {
     <h3 style="font-size:1rem;font-weight:700;margin-bottom:1rem">📈 Visualización por Mes</h3>
     <div class="comp-charts-grid">
       <div>
-        <p style="font-size:0.8125rem;font-weight:600;color:var(--muted-foreground);margin-bottom:0.5rem">Distribución de Tiempos (%)</p>
+        <p class="chart-header" style="font-size:0.8125rem;font-weight:600;color:var(--muted-foreground);margin-bottom:0.5rem">
+          Distribución de Tiempos (%)
+          <button class="btn btn-outline btn-sm dl-btn" onclick="downloadChart('chart-comp-dist','Distribucion_Tiempos')">&#x2B07; PNG</button>
+        </p>
         <canvas id="chart-comp-dist" height="320"></canvas>
       </div>
       <div>
-        <p style="font-size:0.8125rem;font-weight:600;color:var(--muted-foreground);margin-bottom:0.5rem">Indicadores Clave</p>
+        <p class="chart-header" style="font-size:0.8125rem;font-weight:600;color:var(--muted-foreground);margin-bottom:0.5rem">
+          Indicadores Clave
+          <button class="btn btn-outline btn-sm dl-btn" onclick="downloadChart('chart-comp-kpi','Indicadores_Clave')">&#x2B07; PNG</button>
+        </p>
         <canvas id="chart-comp-kpi" height="320"></canvas>
       </div>
     </div>`;
