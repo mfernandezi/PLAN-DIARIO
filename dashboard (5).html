@@ -437,12 +437,18 @@ td.bg-real { background: hsl(210, 17%, 95%, 0.1); }
   <div id="tab-comparacion" class="tab-content">
     <div class="space-y">
       <div class="card controls-card">
-        <div class="controls-row" style="align-items:flex-start;flex-wrap:wrap;gap:1.25rem">
-          <div class="control-group" style="flex:1;min-width:260px">
-            <label class="control-label">Meses a comparar</label>
-            <div id="comp-meses-container" class="comp-meses-chips">
-              <span style="color:var(--muted-foreground);font-size:0.875rem">Carga el archivo UEBD o KPI primero</span>
-            </div>
+        <!-- Row 1: Range pickers -->
+        <div class="controls-row" style="margin-bottom:0.75rem">
+          <div class="control-group">
+            <label class="control-label">Desde</label>
+            <input type="month" id="comp-desde" class="control-input">
+          </div>
+          <div class="control-group">
+            <label class="control-label">Hasta</label>
+            <input type="month" id="comp-hasta" class="control-input">
+          </div>
+          <div class="control-group" style="justify-content:flex-end">
+            <button class="btn btn-outline btn-sm" onclick="aplicarRangoComp()">Aplicar rango</button>
           </div>
           <div class="control-group">
             <label class="control-label">Equipo</label>
@@ -456,6 +462,15 @@ td.bg-real { background: hsl(210, 17%, 95%, 0.1); }
               Comparar
             </button>
           </div>
+        </div>
+        <!-- Row 2: Month chips -->
+        <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+          <span class="control-label" style="white-space:nowrap">Meses:</span>
+          <div id="comp-meses-container" class="comp-meses-chips" style="flex:1">
+            <span style="color:var(--muted-foreground);font-size:0.875rem">Carga el archivo UEBD o KPI primero</span>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="seleccionarTodosMeses(true)" title="Seleccionar todos">&#x2714; Todos</button>
+          <button class="btn btn-outline btn-sm" onclick="seleccionarTodosMeses(false)" title="Deseleccionar todos">&#x2715; Ninguno</button>
         </div>
       </div>
       <div id="comp-results"></div>
@@ -2086,6 +2101,12 @@ function updateComparacionFilters() {
     return;
   }
 
+  // Set range pickers to min/max available months on first load
+  const inputDesde = document.getElementById('comp-desde');
+  const inputHasta = document.getElementById('comp-hasta');
+  if (inputDesde && (!inputDesde.value || isFirstLoad)) inputDesde.value = sorted[0];
+  if (inputHasta && (!inputHasta.value || isFirstLoad)) inputHasta.value = sorted[sorted.length - 1];
+
   sorted.forEach(mes => {
     const label = getNombreMes(mes);
     const checked = isFirstLoad || prevChecked.has(mes);
@@ -2112,6 +2133,26 @@ function updateComparacionFilters() {
     sel.appendChild(opt);
   });
   if (prev && Array.from(rigs).includes(prev)) sel.value = prev;
+}
+
+function aplicarRangoComp() {
+  const desde = document.getElementById('comp-desde').value;
+  const hasta = document.getElementById('comp-hasta').value;
+  if (!desde || !hasta) { showToast('Define el rango Desde/Hasta', 'error'); return; }
+  if (desde > hasta) { showToast('El mes "Desde" debe ser anterior al "Hasta"', 'error'); return; }
+  document.querySelectorAll('#comp-meses-container input[type=checkbox]').forEach(cb => {
+    const inRange = cb.value >= desde && cb.value <= hasta;
+    cb.checked = inRange;
+    cb.closest('label').classList.toggle('checked', inRange);
+  });
+  showToast('Rango aplicado: ' + getNombreMes(desde) + ' → ' + getNombreMes(hasta), 'success');
+}
+
+function seleccionarTodosMeses(checked) {
+  document.querySelectorAll('#comp-meses-container input[type=checkbox]').forEach(cb => {
+    cb.checked = checked;
+    cb.closest('label').classList.toggle('checked', checked);
+  });
 }
 
 function renderComparacion() {
